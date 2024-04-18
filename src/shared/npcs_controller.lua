@@ -3,8 +3,8 @@ local npcs_controller = {
     objects = {}
 }
 
-function npcs_controller:boot(_shared: table)
-    local npcs_config = _shared.npcs_config
+function npcs_controller:load_async(core)
+    local npcs_config = core.config.npcs
     function npcs_controller:load_instances(): boolean
         for _, model in ipairs(workspace:WaitForChild("NPCs"):GetChildren()) do
             local model_id = model.Name
@@ -27,9 +27,10 @@ function npcs_controller:boot(_shared: table)
     self:load_instances()
 end
 
-function npcs_controller:run(_shared: table)
+function npcs_controller:load_sync(core)
+    local animation_controller = core.modules.animation_controller
     local objects = self.objects
-    _shared:play_animation(objects[1].model, objects[1].animation_path)
+    animation_controller:play_animation(objects[1].model, objects[1].animation_path)
 end
 
 return npcs_controller

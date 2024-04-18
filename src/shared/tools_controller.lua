@@ -10,7 +10,7 @@ function tools_controller:is_player_inside_bounds(player_pos: Vector3, target: I
         linear_range and distance.Z <= target_size.Z
 end
 
-function tools_controller:boot()
+function tools_controller:load_async()
     
 end
 

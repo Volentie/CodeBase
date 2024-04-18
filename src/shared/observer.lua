@@ -4,7 +4,7 @@ local observer = {
 	end
 }
 
-function observer:boot()
+function observer:load_async()
 	function observer.new()
 		local self = setmetatable({}, observer)
 		return self

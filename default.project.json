@@ -19,8 +19,11 @@
       "StarterPlayerScripts": {
         "Client": {
           "$path": "src/client"
+        },
+        "core": {
+          "$path": "src/core"
         }
       }
-    } 
+    }
   }
 }

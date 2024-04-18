@@ -14,14 +14,9 @@ function assets_controller.new(asset: MeshPart | Model | BasePart | Instance): (
     
 end
 
-function assets_controller:boot(_shared: table)
-    
-
-    local assets_model = _shared.workspace:WaitForChild("Assets")
+function assets_controller:load_async(core)
+    local assets_model = workspace:WaitForChild("Assets")
     local assets = assets_model:GetChildren()
-    
-    for _, asset in ipairs(assets) do
-    end
 end
 
 return assets_controller

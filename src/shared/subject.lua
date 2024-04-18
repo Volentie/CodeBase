@@ -4,7 +4,7 @@ local subject = {
 	end
 } -- Subject
 
-function subject:boot(_shared: table)
+function subject:load_async(_shared: table)
 	function subject.new()
 		local self = setmetatable({
 			_observers = {},

@@ -2,9 +2,9 @@ local animation_controller = {
     all_animations = {}
 }
 
-function animation_controller:boot(_shared: table)
+function animation_controller:load_async(core)
     local global_anim = self.all_animations
-    local animations_config = _shared.animations_config
+    local animations_config = core.config.animations
 
     -- Function to load all the animations in the game
     function animation_controller:load_all(): ()
