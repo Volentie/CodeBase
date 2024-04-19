@@ -4,7 +4,7 @@ local npcs_controller = {
 }
 
 function npcs_controller:load_async(core)
-    local npcs_config = core.config.npcs
+    local npcs_config = core.configs.npcs
     function npcs_controller:load_instances(): boolean
         for _, model in ipairs(workspace:WaitForChild("NPCs"):GetChildren()) do
             local model_id = model.Name

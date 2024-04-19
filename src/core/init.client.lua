@@ -1,5 +1,6 @@
 --=== CONFIG
 local folder_struct = {
+    Server = "ServerScriptService/Server",
     Client = "StarterPlayer/StarterPlayerScripts/Client",
     Shared = "ReplicatedStorage/Shared"
 }
@@ -10,10 +11,7 @@ assert(not _common or #_common == 0, "common module didn't load correctly")
 local core = {
     modules = {},
     common = _common,
-    config = {
-        animations = require(_common.replicated_storage.Shared.configs.animations_config),
-        npcs = require(_common.replicated_storage.Shared.configs.npcs_config)
-    }
+    configs = {}
 }
 
 do
@@ -28,8 +26,17 @@ do
 
     -- Depth: 1
     for _, side in folder_struct do
-        local side_folder = evaluate_path(side)
-        for _, module in ipairs(side_folder:GetChildren()) do
+        local root_folder = evaluate_path(side)
+        if not root_folder then continue end
+        for _, module in ipairs(root_folder:GetChildren()) do
+            -- Look for configs
+            if module:IsA("Folder") and module.Name:lower():match("config.*$") then
+                for _, config in ipairs(module:GetChildren()) do
+                    if not config:IsA("ModuleScript") then continue end
+                    local config_name = config.Name:lower():gsub("_config", "")
+                    core.configs[config_name] = require(config)
+                end
+            end
             if not module:IsA("ModuleScript") then continue end
             core.modules[module.Name] = require(module)
         end

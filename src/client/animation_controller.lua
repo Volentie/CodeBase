@@ -4,7 +4,7 @@ local animation_controller = {
 
 function animation_controller:load_async(core)
     local global_anim = self.all_animations
-    local animations_config = core.config.animations
+    local animations_config = core.configs.animations
 
     -- Function to load all the animations in the game
     function animation_controller:load_all(): ()
