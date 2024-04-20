@@ -1,11 +1,11 @@
 -- Table that will contain all the npcs in the game
-local npcs_controller = {
+local npcs_manager = {
     objects = {}
 }
 
-function npcs_controller:load_async(core)
-    local npcs_config = core.configs.npcs
-    function npcs_controller:load_instances(): boolean
+function npcs_manager:load_sync(core)
+    local npcs_config = core:get_config("npcs")
+    function npcs_manager:load_instances(): boolean
         for _, model in ipairs(workspace:WaitForChild("NPCs"):GetChildren()) do
             local model_id = model.Name
             local model_config = npcs_config[model_id] or npcs_config[model:GetAttribute("npc_id")]
@@ -13,7 +13,7 @@ function npcs_controller:load_async(core)
                 warn("No configuration found for npc with id: " .. model_id)
                 return false
             else
-                table.insert(npcs_controller.objects, {
+                table.insert(npcs_manager.objects, {
                     model = model,
                     animation_path = model_config.animation_path,
                     name = model.Name
@@ -27,10 +27,10 @@ function npcs_controller:load_async(core)
     self:load_instances()
 end
 
-function npcs_controller:load_sync(core)
-    local animation_controller = core.modules.animation_controller
+function npcs_manager:load_async(core)
+    local animation_manager = core:get_module("animation_manager")
     local objects = self.objects
-    animation_controller:play_animation(objects[1].model, objects[1].animation_path)
+    animation_manager:play_animation(objects[1].model, objects[1].animation_path)
 end
 
-return npcs_controller
+return npcs_manager

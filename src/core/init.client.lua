@@ -1,62 +1,114 @@
+--!nonstrict
 --=== CONFIG
 local folder_struct = {
-    Server = "ServerScriptService/Server",
-    Client = "StarterPlayer/StarterPlayerScripts/Client",
-    Shared = "ReplicatedStorage/Shared"
+    Server = "ServerScriptService/server",
+    Client = "StarterPlayer/StarterPlayerScripts/client",
+    Shared = "ReplicatedStorage/shared"
 }
 
-local _common = require(script:WaitForChild('common', 20))
+local _common = require(script:WaitForChild('common', 1))
 assert(not _common or #_common == 0, "common module didn't load correctly")
+
+export type core = {
+    modules: {[string]: table},
+    common: {[string]: any},
+    configs: {[string]: table},
+    singletons: {[string]: table}
+}
 
 local core = {
     modules = {},
     common = _common,
-    configs = {}
-}
+    configs = {},
+    singletons = {}
+} :: core
 
-do
+local core_behaviour = {
+    get_module = function(self: core, module_name: string): table
+        return self.modules[module_name]
+    end,
+    get_singleton = function(self: core, singleton_name: string): table
+        return self.singletons[singleton_name]
+    end,
+    get_config = function(self: core, config_name: string): table
+        return self.configs[config_name]
+    end
+}
+setmetatable(core, {__index = core_behaviour})
+
+local function boot()
     local function evaluate_path(path: string): any
         local path_parts = string.split(path, "/")
         local current = game
         for _, part in ipairs(path_parts) do
-            current = current:WaitForChild(part, 5)
+            current = current:WaitForChild(part, 0.5)
         end
         return current
     end
-
-    -- Depth: 1
-    for _, side in folder_struct do
-        local root_folder = evaluate_path(side)
-        if not root_folder then continue end
-        for _, module in ipairs(root_folder:GetChildren()) do
-            -- Look for configs
-            if module:IsA("Folder") and module.Name:lower():match("config.*$") then
-                for _, config in ipairs(module:GetChildren()) do
-                    if not config:IsA("ModuleScript") then continue end
-                    local config_name = config.Name:lower():gsub("_config", "")
-                    core.configs[config_name] = require(config)
-                end
-            end
-            if not module:IsA("ModuleScript") then continue end
-            core.modules[module.Name] = require(module)
-        end
-    end
     
-    local function load_priority()
+    -- Include singleton templates
+    local ok = pcall(function()
+        local singletons = _common.replicated_storage["shared"].singletons:GetChildren()
+        for _, singleton in ipairs(singletons) do
+            core.singletons[singleton.Name] = require(singleton)
+        end
+    end)
+    assert(ok, "Failed to load singletons")
+ 
+    local function load_all_sync()
         for _, module in core.modules do
-            pcall(function()
-                module:load_async(core)
-            end)
+            pcall(module.load_sync, module, core)
+            module.load_sync = nil
         end
     end
-    task.spawn(load_priority)
 
-    local function load_sync()
+    local function load_all_async()
         for _, module in core.modules do
-            pcall(function()
-                module:load_sync(core)
-            end)
+            pcall(task.spawn, module.load_async, module, core)
+            module.load_async = nil
         end
     end
-    load_sync()
+
+    local function require_modules_n_configs()
+        for _, side in folder_struct do
+            local root_folder = evaluate_path(side)
+            if not root_folder then
+                continue
+            end
+            -- 
+            --#region Load configs
+            local config_folder = root_folder:FindFirstChild("configs")
+            config_folder = config_folder and config_folder:IsA("Folder") and config_folder or nil
+            if config_folder then
+                for _, config in ipairs(config_folder:GetChildren()) do
+                    if not config:IsA("ModuleScript") then
+                        continue
+                    end
+                    core.configs[config.Name:gsub("_config", "")] = require(config)
+                end 
+            end
+            --#endregion
+            --
+            --#region Require modules
+            for _, module in ipairs(root_folder:GetChildren()) do
+                -- This could've been done differently, removing the config folder from the root_children, for instance
+                if not module:IsA("ModuleScript") then
+                    continue
+                end
+                core.modules[module.Name] = require(module)
+            end
+            --#endregion
+        end
+    end
+    --
+    --#region BOOT SEQUENCE
+    -- Require modules tables
+    require_modules_n_configs()
+    -- Run the load_sync function of each module (priority: sync > async)
+    load_all_sync()
+    -- Run the load_async function of each module
+    load_all_async()
+    --#endregion
 end
+
+boot()
