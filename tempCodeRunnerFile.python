@@ -1,0 +1,11 @@
+import threading
+
+class o:
+    def po():
+        print(10**10**2)
+    def __init__(_):
+        t = threading.Thread(target=o.po)
+        t.start()
+
+while True:
+    n = o()

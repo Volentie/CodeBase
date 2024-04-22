@@ -7,13 +7,6 @@ while not get_service("RunService"):IsRunning() do
     error("Game is not running")
 end
 
-local Players = get_service("Players")
-
-local LocalPlayer = Players.LocalPlayer
-if LocalPlayer == nil then
-    Players:GetPropertyChangedSignal("LocalPlayer"):Wait()
-    LocalPlayer = Players.LocalPlayer
-end
 
 -- --:[Services]:--
 local ReplicatedStorage = get_service("ReplicatedStorage")
@@ -24,14 +17,27 @@ local Lighting = get_service("Lighting")
 local TweenService = get_service("TweenService")
 local UserInputService = get_service("UserInputService")
 local HttpService = get_service("HttpService")
+local Players = get_service("Players")
+local RunService = get_service("RunService")
 
 -- --:[Services Properties]:--
 local StarterCharacterScripts = StarterPlayer:WaitForChild("StarterCharacterScripts")
 local StarterPlayerScripts = StarterPlayer:WaitForChild("StarterPlayerScripts")
 
+local LocalPlayer = Players.LocalPlayer
+if LocalPlayer == nil then
+    Players:GetPropertyChangedSignal("LocalPlayer"):Wait()
+    LocalPlayer = Players.LocalPlayer
+end
+local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+
 return {
     get_service = get_service,
+    run_service = RunService,
     local_player = LocalPlayer,
+    character = Character,
+    humanoid = Character.Humanoid,
+    humanoid_root_part = LocalPlayer.Character.HumanoidRootPart,
     replicated_storage = ReplicatedStorage,
     server_script_service = ServerScriptService,
     starter_player = StarterPlayer,

@@ -7,7 +7,7 @@ local folder_struct = {
 }
 
 local _common = require(script:WaitForChild('common', 1))
-assert(not _common or #_common == 0, "common module didn't load correctly")
+assert(_common, "common module didn't load correctly")
 
 export type core = {
     modules: {[string]: table},
@@ -45,15 +45,14 @@ local function boot()
         end
         return current
     end
-    
-    -- Include singleton templates
-    local ok = pcall(function()
+   
+    do
+        -- Include singleton templates
         local singletons = _common.replicated_storage["shared"].singletons:GetChildren()
         for _, singleton in ipairs(singletons) do
             core.singletons[singleton.Name] = require(singleton)
         end
-    end)
-    assert(ok, "Failed to load singletons")
+    end
  
     local function load_all_sync()
         for _, module in core.modules do
