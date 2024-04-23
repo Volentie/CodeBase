@@ -8,14 +8,44 @@ local asset: asset = {
 asset.__index = asset
 
 function asset.new(obj: asset_object): asset
+    if table.find(asset.global, obj) then
+        return asset.global[table.find(asset.global, obj)]
+    end
+    
     local asset_object: asset_object = obj
+    local _highlight = Instance.new("Highlight")
+    _highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+    _highlight.FillTransparency = 1
+    _highlight.DepthMode = Enum.HighlightDepthMode.Occluded
+    _highlight.Name = "InRange_" .. asset_object.Name
+
 
     local self: asset = setmetatable({
-        asset_object = asset_object
+        asset_object = asset_object,
+        highlighted = false,
+        highlight = _highlight
     }, {__index = asset})
     
     table.insert(asset.global, self)
     return self
+end
+
+function asset:enable_highlight()
+    if self.highlighted then
+        return
+    end
+    self.highlight.Adornee = self.asset_object
+    self.highlight.Parent = workspace.Assets.Highlights
+    self.highlighted = true
+end
+
+function asset:disable_highlight()
+    if not self.highlighted then
+        return
+    end
+    self.highlight.Adornee = nil
+    self.highlight.Parent = nil
+    self.highlighted = false
 end
 
 function asset:is_player_inside_boundaries(player_pos: Vector3, target: Instance, linear_range: number): boolean

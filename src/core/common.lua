@@ -19,6 +19,7 @@ local UserInputService = get_service("UserInputService")
 local HttpService = get_service("HttpService")
 local Players = get_service("Players")
 local RunService = get_service("RunService")
+local PathfindingService = get_service("PathfindingService")
 
 -- --:[Services Properties]:--
 local StarterCharacterScripts = StarterPlayer:WaitForChild("StarterCharacterScripts")
@@ -31,13 +32,22 @@ if LocalPlayer == nil then
 end
 local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
 
+local NPCs_folder = workspace:WaitForChild("NPCs")
+local Seller_folder = NPCs_folder:WaitForChild("Seller")
+local Needy_folder = NPCs_folder:WaitForChild("Needy")
+local City_folder = workspace:WaitForChild("City")
+
 return {
+    npcs_folder = NPCs_folder,
+    seller_folder = Seller_folder,
+    needy_folder = Needy_folder,
+    city_folder = City_folder,
     get_service = get_service,
     run_service = RunService,
     local_player = LocalPlayer,
     character = Character,
-    humanoid = Character.Humanoid,
-    humanoid_root_part = LocalPlayer.Character.HumanoidRootPart,
+    humanoid = Character:WaitForChild("Humanoid"),
+    humanoid_root_part = LocalPlayer.Character:WaitForChild("HumanoidRootPart"),
     replicated_storage = ReplicatedStorage,
     server_script_service = ServerScriptService,
     starter_player = StarterPlayer,
@@ -47,5 +57,6 @@ return {
     user_input_service = UserInputService,
     http_service = HttpService,
     starter_character_scripts = StarterCharacterScripts,
-    starter_player_scripts = StarterPlayerScripts
+    starter_player_scripts = StarterPlayerScripts,
+    pathfinding_service = PathfindingService
 }

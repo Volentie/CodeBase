@@ -7,6 +7,7 @@ return {
     static = {
         sit = "17057832030"
     },
-    --[[mobile = {
-    }]]
+    kinetic = {
+        breath = "17259080096"
+    }
 }

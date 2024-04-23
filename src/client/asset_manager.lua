@@ -1,5 +1,6 @@
 local asset_manager = {
-    linear_range_int = 15
+    linear_range_int = 15,
+    assets_folder = workspace.City
 }
 
 function asset_manager:load_async(core)
@@ -21,7 +22,7 @@ end
 
 function asset_manager:create_assets_for_models(core)
     local asset = core:get_singleton("asset")
-    for _, model in workspace["Models"]:GetChildren() do
+    for _, model in self.assets_folder:GetChildren() do
         asset.new(model)
     end
 end
@@ -30,7 +31,9 @@ function asset_manager:on_player_moved(asset_singleton, player_pos)
     for _, asset in ipairs(asset_singleton.global) do
         if asset:is_player_inside_boundaries(player_pos, asset.asset_object, self.linear_range_int) then
             --print("Player is inside the boundaries of the asset: " .. asset.asset_object.Name)
-            
+            asset:enable_highlight()
+        elseif asset.highlighted then
+            asset:disable_highlight()
         end
     end
 end
