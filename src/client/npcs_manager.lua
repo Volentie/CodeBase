@@ -9,14 +9,19 @@ function npcs_manager.new(data: table)
     local npcs_config = self.core:get_config("npcs")
     local npc_config = npcs_config[data["name"]]
     assert(npc_config, "NPC not found in npcs config")
- 
+    
     local animation_manager = self.core:get_module("animation_manager")
 
     function self:try_load_animation()
         if not npc_config.animation_path then
             return
         end
-        animation_manager:play_animation(self.model, npc_config.animation_path)
+        local animator = Instance.new("Animator")
+        animator.Parent = self.model.Humanoid
+
+        self.animation = animation_manager:play_animation(self.model, npc_config.animation_path)
+        self.animation_playing = true
+
         return true
     end
 
@@ -78,42 +83,141 @@ function npcs_manager:give_random_food()
 end
 
 function npcs_manager:create_n_calculate_path(npc, target_pos)
-    local path = self.core.common.pathfinding_service:CreatePath()
+    local path = self.core.common.pathfinding_service:CreatePath({
+        AgentRadius = 2,
+        AgentHeight = 5,
+        AgentCanJump = true,
+        AgentCanClimb = true,
+        Costs = {
+            Water = 10,
+            Grass = 1
+        },
+        IncludeWaypoints = true,
+        WaypointSpacing = 5
+    })
+    
     path:ComputeAsync(npc.HumanoidRootPart.Position, target_pos)
+    
     return path
+end
+
+function npcs_manager:change_parts_collision_group(group_name: string)
+    for _, part in ipairs(self.model:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.CollisionGroup = group_name
+        end
+    end
 end
 
 function npcs_manager:donate_food_to_needy()
     local needy_npc = self.model
     local tool_equipped = self.core.common.character:FindFirstChildWhichIsA("Tool")
     if not tool_equipped then
-        warn("No tool equipped")
+        local warn_message = self.core.common.player_gui:WaitForChild("HUD"):WaitForChild("WARN")
+        warn_message.Text = "You need to have a food in your hand to donate, equip it first!"
+        local fade_in = self.core.common.tween_service:Create(warn_message, TweenInfo.new(2), {
+            TextTransparency = 0,
+            TextStrokeTransparency = 0
+        })
+        local fade_out = self.core.common.tween_service:Create(warn_message, TweenInfo.new(2), {
+            TextTransparency = 1,
+            TextStrokeTransparency = 1
+        })
+        fade_in.Completed:Connect(function()
+            fade_out:Play()
+            fade_out.Completed:Connect(function()
+                fade_out:Destroy()
+                fade_out = nil
+                fade_in:Destroy()
+                fade_in = nil
+            end)
+        end)
+        fade_in:Play()
         return
     end
 
+    local prompt = needy_npc:FindFirstChildWhichIsA("ProximityPrompt")
+    prompt:Destroy()
+
+    -- Give the tool (food) to the npc
+    needy_npc.Humanoid:EquipTool(tool_equipped)
     tool_equipped:Destroy()
-    local needy_npc_pos = needy_npc.HumanoidRootPart.Position
-    local ngos = self.core.common.city_folder.NGOs:GetChildren()
+    
+    if self.animation_playing then
+        self.animation:Stop()
+        self.animation_playing = false
+    end
+
+    local ngos = workspace.City.NGOs:GetChildren()
     local nearest_distance = {Magnitude = math.huge}
+    local nearest_ngo
     for _, ngo in ipairs(ngos) do
-        local ngo_pos = ngo:GetPivot().Position
-        local distance = (ngo_pos - needy_npc_pos)
+        local entrance_pos = ngo["corrimao.001"]:FindFirstChildWhichIsA("Attachment").WorldPosition
+        local distance = (entrance_pos - needy_npc:GetPivot().Position)
         if distance.Magnitude < nearest_distance.Magnitude then
             nearest_distance = distance
+            nearest_ngo = ngo
         end
     end
 
     -- Calculate the path
-    local path = self:create_n_calculate_path(needy_npc, nearest_distance)
+    local path = self:create_n_calculate_path(needy_npc, nearest_ngo["corrimao.001"]:FindFirstChildWhichIsA("Attachment").WorldPosition)
     if path.Status == Enum.PathStatus.NoPath then
         warn("No path found")
         return
     end
-    -- Move the npc
-    for _, point in ipairs(path:GetWaypoints()) do
-        needy_npc.Humanoid:MoveTo(point.Position)
-        needy_npc.Humanoid.MoveToFinished:Wait()
+
+    -- Make the npc collide only with the ground
+    self:change_parts_collision_group("npc_walk_mode")
+    
+    -- Play the default roblox walk animation on the npc
+    local animator = needy_npc.Humanoid:FindFirstChildOfClass("Animator")
+    local animation = needy_npc["Animate"]["walk"]:GetChildren()[1]
+    
+    local animation_track = animator:LoadAnimation(animation)
+    animation_track:Play()
+
+    local waypoints = path:GetWaypoints()
+    local next_waypoint_index = 1
+    local humanoid = needy_npc.Humanoid
+
+    local function move_to_next_waypoint()
+        if next_waypoint_index <= #waypoints then
+            local waypoint = waypoints[next_waypoint_index]
+            
+            humanoid:MoveTo(waypoint.Position)
+            
+            local connection
+            connection = humanoid.MoveToFinished:Connect(function(reached)
+                if reached then
+                    next_waypoint_index = next_waypoint_index + 1
+                    connection:Disconnect()
+                    move_to_next_waypoint()
+                end
+            end)
+        else
+            -- Reached the last waypoint
+            self:change_parts_collision_group("Default")
+            
+            -- Stop walk animation
+            animation_track:Stop()
+            
+            -- Make the needy npc disappear
+            for _, descendant in ipairs(needy_npc:GetDescendants()) do
+                local ok = pcall(function() return descendant["Transparency"] end)
+                if ok then
+                    local tween = self.core.common.tween_service:Create(descendant, TweenInfo.new(0.5), {Transparency = 1})
+                    tween.Completed:Connect(function()
+                        tween:Destroy()
+                        tween = nil
+                    end)
+                    tween:Play()
+                end
+            end
+        end
     end
+
+    move_to_next_waypoint()
 end
 
 function npcs_manager:connect_prompt_triggered(data)
@@ -148,15 +252,6 @@ function npcs_manager:load_npcs()
     end
 end
 
--- Filter function
-function npcs_manager:load_onto(npc_type, callback: (npc: table) -> any)
-    for _, npc_object in ipairs(npcs_manager.objects) do
-        if npc_object.name:find(npc_type) then
-            callback(npc_object)
-        end
-    end
-end
-
 function npcs_manager:load_async(_core)
     self.core = _core
     
@@ -164,32 +259,68 @@ function npcs_manager:load_async(_core)
     self:load_npcs()
 
     -- Load npcs behaviours
-    self:load_onto("seller", function(npc)
-        npc:connect_lookat_player()
-        npc:connect_prompt_triggered({
-            prompt = npc.model:FindFirstChildWhichIsA("ProximityPrompt"),
-            callback = function()
-                npc:give_random_food()
+    self.core.filter_call(
+        function(npc)
+            return npc.name:find("seller")
+        end,
+        function(npc)
+            local prompt = Instance.new("ProximityPrompt")
+            prompt.HoldDuration = 0.5
+            prompt.ActionText = "Get Food"
+            prompt.ObjectText = "Donate to Homeless!"
+            prompt.MaxActivationDistance = 5
+            prompt.Name = "interact"
+            prompt.Parent = npc.model
+            
+            npc:connect_lookat_player()
+            
+            npc:connect_prompt_triggered({
+                prompt = prompt,
+                callback = function()
+                    npc:give_random_food()
+                end
+            })
+        end
+    )(
+        function(predicate, callback)
+            for _, npc in ipairs(npcs_manager.objects) do
+                if predicate(npc) then
+                    callback(npc)
+                end
             end
-        })
-    end)
-    
-    self:load_onto("needy", function(npc)
-        local prompt = Instance.new("ProximityPrompt")
-        prompt.HoldDuration = 0.5
-        prompt.ActionText = "Give Food"
-        prompt.ObjectText = "Homeless"
-        prompt.MaxActivationDistance = 5
-        prompt.Name = "interact"
-        prompt.Parent = npc.model
+        end
+    )
 
-        npc:connect_prompt_triggered({
-            prompt = prompt,
-            callback = function()
-                npc:donate_food_to_needy()
+    self.core.filter_call(
+        function(npc)
+            return npc.name:find("needy")
+        end,
+        function(npc)
+            local prompt = Instance.new("ProximityPrompt")
+            prompt.HoldDuration = 0.5
+            prompt.ActionText = "Give Food"
+            prompt.ObjectText = "In need of food!"
+            prompt.MaxActivationDistance = 5
+            prompt.Name = "interact"
+            prompt.Parent = npc.model
+    
+            npc:connect_prompt_triggered({
+                prompt = prompt,
+                callback = function()
+                    npc:donate_food_to_needy()
+                end
+            })
+        end
+    )(
+        function(predicate, callback)
+            for _, npc in ipairs(npcs_manager.objects) do
+                if predicate(npc) then
+                    callback(npc)
+                end
             end
-        })
-    end)
+        end
+    )
+
 end
 
 return npcs_manager

@@ -32,11 +32,25 @@ local core_behaviour = {
     end,
     get_config = function(self: core, config_name: string): table
         return self.configs[config_name]
+    end,
+    filter_call = function(predicate: (any) -> boolean, callback: (any) -> nil): (((any) -> boolean, (any) -> nil) -> nil) -> nil
+        return function(func: ((any) -> boolean, (any) -> nil) -> nil)
+            func(predicate, callback)
+        end
     end
 }
+
 setmetatable(core, {__index = core_behaviour})
 
+local function call_remote()
+    local remoteFunction = game.ReplicatedStorage:WaitForChild("SetNetworkOwnershipFunction")
+    remoteFunction:InvokeServer()
+end
+
 local function boot()
+    
+    call_remote()
+
     local function evaluate_path(path: string): any
         local path_parts = string.split(path, "/")
         local current = game

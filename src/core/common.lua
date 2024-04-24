@@ -20,6 +20,7 @@ local HttpService = get_service("HttpService")
 local Players = get_service("Players")
 local RunService = get_service("RunService")
 local PathfindingService = get_service("PathfindingService")
+local PhysicsService = get_service("PhysicsService")
 
 -- --:[Services Properties]:--
 local StarterCharacterScripts = StarterPlayer:WaitForChild("StarterCharacterScripts")
@@ -31,6 +32,7 @@ if LocalPlayer == nil then
     LocalPlayer = Players.LocalPlayer
 end
 local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
 local NPCs_folder = workspace:WaitForChild("NPCs")
 local Seller_folder = NPCs_folder:WaitForChild("Seller")
@@ -52,11 +54,13 @@ return {
     server_script_service = ServerScriptService,
     starter_player = StarterPlayer,
     starter_gui = StarterGui,
+    player_gui = PlayerGui,
     lighting = Lighting,
     tween_service = TweenService,
     user_input_service = UserInputService,
     http_service = HttpService,
     starter_character_scripts = StarterCharacterScripts,
     starter_player_scripts = StarterPlayerScripts,
-    pathfinding_service = PathfindingService
+    pathfinding_service = PathfindingService,
+    physics_service = PhysicsService
 }

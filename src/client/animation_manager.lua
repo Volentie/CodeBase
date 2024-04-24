@@ -9,14 +9,24 @@ function animation_manager:play_animation(model: Model, animation_path: string):
         warn("No animation found for path: " .. animation_path)
         return false
     end
-    -- Wait for the humanoid
-    local model_humanoid = model:WaitForChild("Humanoid")
-    -- Play the animation
-    local animation = Instance.new("Animation")
-    animation.AnimationId = "rbxassetid://" .. animation_id
 
-    local animation_track = model_humanoid:LoadAnimation(animation)
+    local anim_id = "rbxassetid://" .. animation_id
+    local animation = model:FindFirstChild(anim_id)
+    if not animation then
+        animation = Instance.new("Animation")
+        animation.AnimationId = "rbxassetid://" .. animation_id
+    elseif animation.IsPlaying then
+        warn("Animation is already playing")
+        return
+    end
+
+    local animator = model.Humanoid:FindFirstChildOfClass("Animator")
+    assert(animator, "No animator found in model")
+
+    local animation_track = animator:LoadAnimation(animation)
     animation_track:Play()
+
+    return animation_track
 end
 
 function animation_manager:load_sync(core)
