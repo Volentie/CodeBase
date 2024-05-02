@@ -11,6 +11,8 @@ end
 -- --:[Services]:--
 local ReplicatedStorage = get_service("ReplicatedStorage")
 local ServerScriptService = get_service("ServerScriptService")
+local StarterPlayerScripts = get_service("StarterPlayerScripts")
+local StarterCharacterScripts = get_service("StarterCharacterScripts")
 local StarterPlayer = get_service("StarterPlayer")
 local StarterGui = get_service("StarterGui")
 local Lighting = get_service("Lighting")
@@ -21,10 +23,6 @@ local Players = get_service("Players")
 local RunService = get_service("RunService")
 local PathfindingService = get_service("PathfindingService")
 local PhysicsService = get_service("PhysicsService")
-
--- --:[Services Properties]:--
-local StarterCharacterScripts = StarterPlayer:WaitForChild("StarterCharacterScripts")
-local StarterPlayerScripts = StarterPlayer:WaitForChild("StarterPlayerScripts")
 
 local LocalPlayer = Players.LocalPlayer
 if LocalPlayer == nil then
@@ -62,5 +60,5 @@ return {
     starter_character_scripts = StarterCharacterScripts,
     starter_player_scripts = StarterPlayerScripts,
     pathfinding_service = PathfindingService,
-    physics_service = PhysicsService
+    physics_service = PhysicsService,
 }

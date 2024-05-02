@@ -20,7 +20,9 @@ local core = {
     modules = {},
     common = _common,
     configs = {},
-    singletons = {}
+    uis = {},
+    singletons = {},
+    packages = {}
 } :: core
 
 local core_behaviour = {
@@ -29,6 +31,9 @@ local core_behaviour = {
     end,
     get_singleton = function(self: core, singleton_name: string): table
         return self.singletons[singleton_name]
+    end,
+    get_ui = function(self: core, ui_name: string): table
+        return self.uis[ui_name]
     end,
     get_config = function(self: core, config_name: string): table
         return self.configs[config_name]
@@ -60,14 +65,42 @@ local function boot()
         return current
     end
    
-    do
-        -- Include singleton templates
+    -- Include singleton templates
+    local function include_singletons()
         local singletons = _common.replicated_storage["shared"].singletons:GetChildren()
         for _, singleton in ipairs(singletons) do
             core.singletons[singleton.Name] = require(singleton)
         end
     end
- 
+    include_singletons()
+    
+    -- Load packages
+    local function load_packages()
+        local packages = _common.replicated_storage:WaitForChild("packages")
+        for _, package in ipairs(packages:GetChildren()) do
+            core.packages[package.Name] = require(package)
+        end
+    end
+    load_packages()
+    
+    local function load_uis()
+        local ui_folder = _common.replicated_storage["shared"]:WaitForChild("ui")
+        -- Require the rest of the UI elements
+        for _, ui in ipairs(ui_folder:GetChildren()) do
+            core.uis[ui.Name] = require(ui)
+        end
+        -- Load the templates
+        assert(core.uis["templates"], "templates ui module not found")
+        core.uis["templates"]:load_sync(core)
+        -- Load the UI elements with the possibility of using the templates
+        for ui_name, ui in ipairs(core.uis) do
+            if ui_name ~= "templates" then
+                core.uis[ui.Name]:load_sync(core)
+            end
+        end
+    end
+    load_uis()
+    
     local function load_all_sync()
         for _, module in core.modules do
             pcall(module.load_sync, module, core)
