@@ -7,7 +7,7 @@ function npcs_manager.new(data: table)
     local self = setmetatable(data, {__index = npcs_manager})
 
     local npcs_config = self.core:get_config("npcs")
-    local npc_config = npcs_config[data["name"]]
+    local npc_config = npcs_config[data["id"]]
     assert(npc_config, "NPC not found in npcs config")
     
     local animation_manager = self.core:get_module("animation_manager")
@@ -243,7 +243,7 @@ function npcs_manager:load_npcs()
         -- Positive checking =)
         if npc:IsA("Model") then
             local npc_instance = npcs_manager.new({
-                name = npc.Name,
+                id = npc:GetAttribute("id"),
                 model = npc
             })
 
@@ -261,7 +261,7 @@ function npcs_manager:load_async(_core)
     -- Load npcs behaviours
     self.core.filter_call(
         function(npc)
-            return npc.name:find("seller")
+            return npc:GetAttribute("id") == "seller_v1"
         end,
         function(npc)
             local prompt = Instance.new("ProximityPrompt")
@@ -282,18 +282,16 @@ function npcs_manager:load_async(_core)
             })
         end
     )(
-        function(predicate, callback)
+        function(_predicate, callback)
             for _, npc in ipairs(npcs_manager.objects) do
-                if predicate(npc) then
-                    callback(npc)
-                end
+                callback(npc)
             end
         end
     )
 
     self.core.filter_call(
         function(npc)
-            return npc.name:find("needy")
+            return npc:GetAttribute("id") == "needy_v1"
         end,
         function(npc)
             local prompt = Instance.new("ProximityPrompt")
@@ -312,11 +310,9 @@ function npcs_manager:load_async(_core)
             })
         end
     )(
-        function(predicate, callback)
+        function(_predicate, callback)
             for _, npc in ipairs(npcs_manager.objects) do
-                if predicate(npc) then
-                    callback(npc)
-                end
+                callback(npc)
             end
         end
     )

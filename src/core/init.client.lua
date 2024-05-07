@@ -6,6 +6,8 @@ local folder_struct = {
     Shared = "ReplicatedStorage/shared"
 }
 
+local DEBUG_MODE = true
+
 local _common = require(script:WaitForChild('common', 1))
 assert(_common, "common module didn't load correctly")
 
@@ -52,8 +54,16 @@ local function call_remote()
     remoteFunction:InvokeServer()
 end
 
+local function debug(...)
+    if DEBUG_MODE then
+        warn(":=[FOX DEBUG]=:", ...)
+    end
+end
+
 local function boot()
-    
+
+    -- Set network ownership of NPCs to the client before anything
+    -- Humanoid control doesn't work properly otherwise
     call_remote()
 
     local function evaluate_path(path: string): any
@@ -64,54 +74,66 @@ local function boot()
         end
         return current
     end
-   
-    -- Include singleton templates
-    local function include_singletons()
-        local singletons = _common.replicated_storage["shared"].singletons:GetChildren()
-        for _, singleton in ipairs(singletons) do
-            core.singletons[singleton.Name] = require(singleton)
-        end
-    end
-    include_singletons()
-    
-    -- Load packages
-    local function load_packages()
+
+     -- Load packages
+    local function include_packages()
         local packages = _common.replicated_storage:WaitForChild("packages")
         for _, package in ipairs(packages:GetChildren()) do
             core.packages[package.Name] = require(package)
+            debug("(Package) Included:", package.Name)
         end
     end
-    load_packages()
-    
+    include_packages()
+
+    -- Include singleton templates
+    local function include_singletons()
+        local singletons = _common.replicated_storage["shared"].singletons:GetChildren()
+        for _, singleton in pairs(singletons) do
+            core.singletons[singleton.Name] = require(singleton)
+            if type(core.singletons[singleton.Name]) == "function" then
+                core.singletons[singleton.Name] = core.singletons[singleton.Name](core)
+            end
+            debug("(Singleton) Included:", singleton.Name)
+        end
+    end
+    include_singletons()
+
     local function load_uis()
         local ui_folder = _common.replicated_storage["shared"]:WaitForChild("ui")
         -- Require the rest of the UI elements
         for _, ui in ipairs(ui_folder:GetChildren()) do
             core.uis[ui.Name] = require(ui)
+            debug("(UI) Included: ", ui.Name)
         end
-        -- Load the templates
-        assert(core.uis["templates"], "templates ui module not found")
-        core.uis["templates"]:load_sync(core)
-        -- Load the UI elements with the possibility of using the templates
-        for ui_name, ui in ipairs(core.uis) do
-            if ui_name ~= "templates" then
-                core.uis[ui.Name]:load_sync(core)
-            end
+        
+        -- Load sync
+        for ui_name, ui in core.uis do
+            pcall(ui.load_sync, ui, core)
+            ui.load_sync = nil
+            debug("(UI) Loaded sync of:", ui_name)
+        end
+        -- Load async
+        for ui_name, ui in core.uis do
+            pcall(task.spawn, ui.load_async, ui, core)
+            ui.load_async = nil
+            debug("(UI) Loaded async of:", ui_name)
         end
     end
     load_uis()
     
     local function load_all_sync()
-        for _, module in core.modules do
+        for module_name, module in core.modules do
             pcall(module.load_sync, module, core)
             module.load_sync = nil
+            debug("(Module) Loaded sync of:", module_name)
         end
     end
 
     local function load_all_async()
-        for _, module in core.modules do
+        for module_name, module in core.modules do
             pcall(task.spawn, module.load_async, module, core)
             module.load_async = nil
+            debug("(Module) Loaded async of:", module_name)
         end
     end
 
@@ -131,6 +153,7 @@ local function boot()
                         continue
                     end
                     core.configs[config.Name:gsub("_config", "")] = require(config)
+                    debug("Included config:", config.Name)
                 end 
             end
             --#endregion
@@ -142,6 +165,7 @@ local function boot()
                     continue
                 end
                 core.modules[module.Name] = require(module)
+                debug("Included module:", module.Name)
             end
             --#endregion
         end
