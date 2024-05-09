@@ -27,6 +27,7 @@ function asset.new(obj: asset_object): asset
     }, {__index = asset})
     
     table.insert(asset.global, self)
+    
     return self
 end
 
@@ -35,7 +36,7 @@ function asset:enable_highlight()
         return
     end
     self.highlight.Adornee = self.asset_object
-    self.highlight.Parent = workspace.Assets.Highlights
+    self.highlight.Parent = game.ReplicatedStorage.assets.Highlights
     self.highlighted = true
 end
 

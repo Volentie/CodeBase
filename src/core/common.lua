@@ -36,9 +36,11 @@ local NPCs_folder = workspace:WaitForChild("NPCs")
 local Seller_folder = NPCs_folder:WaitForChild("Seller")
 local Needy_folder = NPCs_folder:WaitForChild("Needy")
 local City_folder = workspace:WaitForChild("City")
+local NGOs_Folder = workspace:WaitForChild("NGOs")
 
 return {
     npcs_folder = NPCs_folder,
+    ngos_folder = NGOs_Folder,
     seller_folder = Seller_folder,
     needy_folder = Needy_folder,
     city_folder = City_folder,

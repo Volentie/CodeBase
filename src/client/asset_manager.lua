@@ -1,6 +1,5 @@
 local asset_manager = {
     linear_range_int = 15,
-    assets_folder = workspace.City
 }
 
 function asset_manager:load_async(core)
@@ -12,7 +11,7 @@ function asset_manager:load_async(core)
     local asset = core:get_singleton("asset")
 
     -- Create the assets for all models
-    self:create_assets_for_models(core)
+    self:create_assets_for(core, core.common.ngos_folder)
 
     -- Subscribe a connection to the event bus
     bus:publish("subscribe_connection", run_service, "RenderStepped", function()
@@ -20,9 +19,9 @@ function asset_manager:load_async(core)
     end)
 end
 
-function asset_manager:create_assets_for_models(core)
+function asset_manager:create_assets_for(core, folder: Folder)
     local asset = core:get_singleton("asset")
-    for _, model in self.assets_folder:GetChildren() do
+    for _, model in folder:GetChildren() do
         asset.new(model)
     end
 end

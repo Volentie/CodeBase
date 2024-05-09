@@ -52,9 +52,17 @@ function npcs_manager:connect_lookat_player()
             return
         end
         
+        if self.animation_playing then
+            self.animation:Stop()
+            self.animation_playing = false
+        else
+            self.animation:Play()
+        end
+        
         local player_pos = self.core.common.humanoid_root_part.Position
         local npc_pos = npc_model:GetPivot().Position
-        local target_cframe = CFrame.new(npc_pos, player_pos)
+        local target_pos = Vector3.new(player_pos.X, npc_pos.Y, player_pos.Z)
+        local target_cframe = CFrame.new(npc_pos, target_pos)
         local tween_goal = {
             Value = target_cframe
         }
@@ -113,26 +121,6 @@ function npcs_manager:donate_food_to_needy()
     local needy_npc = self.model
     local tool_equipped = self.core.common.character:FindFirstChildWhichIsA("Tool")
     if not tool_equipped then
-        local warn_message = self.core.common.player_gui:WaitForChild("HUD"):WaitForChild("WARN")
-        warn_message.Text = "You need to have a food in your hand to donate, equip it first!"
-        local fade_in = self.core.common.tween_service:Create(warn_message, TweenInfo.new(2), {
-            TextTransparency = 0,
-            TextStrokeTransparency = 0
-        })
-        local fade_out = self.core.common.tween_service:Create(warn_message, TweenInfo.new(2), {
-            TextTransparency = 1,
-            TextStrokeTransparency = 1
-        })
-        fade_in.Completed:Connect(function()
-            fade_out:Play()
-            fade_out.Completed:Connect(function()
-                fade_out:Destroy()
-                fade_out = nil
-                fade_in:Destroy()
-                fade_in = nil
-            end)
-        end)
-        fade_in:Play()
         return
     end
 
@@ -148,7 +136,7 @@ function npcs_manager:donate_food_to_needy()
         self.animation_playing = false
     end
 
-    local ngos = workspace.City.NGOs:GetChildren()
+    local ngos = workspace.NGOs:GetChildren()
     local nearest_distance = {Magnitude = math.huge}
     local nearest_ngo
     for _, ngo in ipairs(ngos) do
@@ -236,15 +224,31 @@ function npcs_manager:load_npcs()
         warn("Trying to load npcs from an instance of npcs_manager")
         return
     end
+    
+    --[[
+        needy_names:
+            Armars, Arkan, Atticus, Audrey, Ben, Jason, Jonathan, Juan, Leila, Priya, Richard, Rina, Yung Li, Elijah
+        civils_names:
+            Beth, Charlie, Dan, Joe, Lilly, Mary, Nick, Oliver, Sakura, Sam
+        seller_names:
+            Elizabeth, Geroge, Hercules, Lucy, Michele, Mike
+    ]]
 
     local folder = self.core.common.npcs_folder
     local descendants = folder:GetDescendants()
     for _, npc in ipairs(descendants) do
         -- Positive checking =)
         if npc:IsA("Model") then
+            local npc_name = npc:GetAttribute("name")
+            if npc.Name ~= npc_name then
+                npc.Name = npc_name
+                warn("Name attribute doesn't match the name attribute of the npc model:\t\t", npc_name, npc.Name)
+            end
+
             local npc_instance = npcs_manager.new({
                 id = npc:GetAttribute("id"),
-                model = npc
+                model = npc,
+                name = npc_name
             })
 
             npc_instance:try_load_animation()
@@ -254,20 +258,23 @@ end
 
 function npcs_manager:load_async(_core)
     self.core = _core
-    
+
+    -- Get component singleton
+    local component = self.core:get_singleton("component")
+
     -- Load npcs
     self:load_npcs()
 
     -- Load npcs behaviours
     self.core.filter_call(
         function(npc)
-            return npc:GetAttribute("id") == "seller_v1"
+            return npc.model:GetAttribute("id") == "seller_v1"
         end,
         function(npc)
             local prompt = Instance.new("ProximityPrompt")
             prompt.HoldDuration = 0.5
-            prompt.ActionText = "Get Food"
-            prompt.ObjectText = "Donate to Homeless!"
+            prompt.ActionText = "Interact"
+            prompt.ObjectText = "Interact with " .. npc.model:GetAttribute("name")
             prompt.MaxActivationDistance = 5
             prompt.Name = "interact"
             prompt.Parent = npc.model
@@ -282,22 +289,24 @@ function npcs_manager:load_async(_core)
             })
         end
     )(
-        function(_predicate, callback)
+        function(predicate, callback)
             for _, npc in ipairs(npcs_manager.objects) do
-                callback(npc)
+                if predicate(npc) then
+                    callback(npc)
+                end
             end
         end
     )
 
     self.core.filter_call(
         function(npc)
-            return npc:GetAttribute("id") == "needy_v1"
+            return npc.model:GetAttribute("id") == "needy_v1"
         end,
         function(npc)
             local prompt = Instance.new("ProximityPrompt")
             prompt.HoldDuration = 0.5
-            prompt.ActionText = "Give Food"
-            prompt.ObjectText = "In need of food!"
+            prompt.ActionText = "Speak"
+            prompt.ObjectText = "Speak with " .. npc.model:GetAttribute("name")
             prompt.MaxActivationDistance = 5
             prompt.Name = "interact"
             prompt.Parent = npc.model
@@ -305,14 +314,17 @@ function npcs_manager:load_async(_core)
             npc:connect_prompt_triggered({
                 prompt = prompt,
                 callback = function()
-                    npc:donate_food_to_needy()
+                    component:get("Dialog", npc.name):show()
+                    --npc:donate_food_to_needy()
                 end
             })
         end
     )(
-        function(_predicate, callback)
+        function(predicate, callback)
             for _, npc in ipairs(npcs_manager.objects) do
-                callback(npc)
+                if predicate(npc) then
+                    callback(npc)
+                end
             end
         end
     )

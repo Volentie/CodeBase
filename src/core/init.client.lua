@@ -52,6 +52,19 @@ setmetatable(core, {__index = core_behaviour})
 local function call_remote()
     local remoteFunction = game.ReplicatedStorage:WaitForChild("SetNetworkOwnershipFunction")
     remoteFunction:InvokeServer()
+    -- Get response
+    remoteFunction.OnClientInvoke = function(response)
+        assert(response, "Failed to set network ownership")
+        for _, npc_model in workspace.NPCs.Needy:GetChildren() do
+            task.spawn(function()
+                for _, descendant in ipairs(npc_model:GetDescendants()) do
+                    if descendant:IsA("BasePart") then
+                        descendant.Anchored = true
+                    end
+                end
+            end)
+        end
+    end
 end
 
 local function debug(...)
@@ -65,6 +78,16 @@ local function boot()
     -- Set network ownership of NPCs to the client before anything
     -- Humanoid control doesn't work properly otherwise
     call_remote()
+    
+    --[[
+        Boot sequence n' availability:
+            1. Load packages (core.packages)
+            2. Include singleton templates (core.singletons)
+            3. Load UIs (core.uis)
+            4. Require modules and configs (core.modules, core.configs)
+            5. Load sync of modules
+            6. Load async of modules
+    ]]
 
     local function evaluate_path(path: string): any
         local path_parts = string.split(path, "/")
@@ -98,28 +121,28 @@ local function boot()
     end
     include_singletons()
 
-    local function load_uis()
-        local ui_folder = _common.replicated_storage["shared"]:WaitForChild("ui")
-        -- Require the rest of the UI elements
-        for _, ui in ipairs(ui_folder:GetChildren()) do
-            core.uis[ui.Name] = require(ui)
-            debug("(UI) Included: ", ui.Name)
-        end
+    -- local function load_uis()
+    --     local ui_folder = _common.replicated_storage["shared"]:WaitForChild("ui")
+    --     -- Require the rest of the UI elements
+    --     for _, ui in ipairs(ui_folder:GetChildren()) do
+    --         core.uis[ui.Name] = require(ui)
+    --         debug("(UI) Included: ", ui.Name)
+    --     end
         
-        -- Load sync
-        for ui_name, ui in core.uis do
-            pcall(ui.load_sync, ui, core)
-            ui.load_sync = nil
-            debug("(UI) Loaded sync of:", ui_name)
-        end
-        -- Load async
-        for ui_name, ui in core.uis do
-            pcall(task.spawn, ui.load_async, ui, core)
-            ui.load_async = nil
-            debug("(UI) Loaded async of:", ui_name)
-        end
-    end
-    load_uis()
+    --     -- Load sync
+    --     for ui_name, ui in core.uis do
+    --         pcall(ui.load_sync, ui, core)
+    --         ui.load_sync = nil
+    --         debug("(UI) Loaded sync of:", ui_name)
+    --     end
+    --     -- Load async
+    --     for ui_name, ui in core.uis do
+    --         pcall(task.spawn, ui.load_async, ui, core)
+    --         ui.load_async = nil
+    --         debug("(UI) Loaded async of:", ui_name)
+    --     end
+    -- end
+    -- load_uis()
     
     local function load_all_sync()
         for module_name, module in core.modules do
