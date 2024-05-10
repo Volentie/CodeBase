@@ -1,3 +1,4 @@
+local TweenService = game:GetService("TweenService")
 -- Table that will contain all the npcs in the game
 local npcs_manager = {
     objects = {},
@@ -117,25 +118,52 @@ function npcs_manager:change_parts_collision_group(group_name: string)
     end
 end
 
+function npcs_manager:move_to_next_waypoint(next_waypoint_index, waypoints, humanoid, and_then)
+    if next_waypoint_index <= #waypoints then
+        local waypoint = waypoints[next_waypoint_index]
+        
+        humanoid:MoveTo(waypoint.Position)
+        
+        local connection
+        connection = humanoid.MoveToFinished:Connect(function(reached)
+            if reached then
+                next_waypoint_index = next_waypoint_index + 1
+                connection:Disconnect()
+                self:move_to_next_waypoint(next_waypoint_index, waypoints, humanoid, and_then)
+            end
+        end)
+    else
+        and_then()
+    end
+end
+
 function npcs_manager:donate_food_to_needy()
     local needy_npc = self.model
     local tool_equipped = self.core.common.character:FindFirstChildWhichIsA("Tool")
     if not tool_equipped then
+        local msg = game.Players.LocalPlayer.PlayerGui.HUD.info_1.text
+        msg.Text = "You need to have a food equipped to donate it!"
+        local show = TweenService:Create(msg, TweenInfo.new(1), {TextTransparency = 0})
+        show.Completed:Connect(function()
+            show:Destroy()
+            show = nil
+            TweenService:Create(msg, TweenInfo.new(1), {TextTransparency = 1}):Play()
+        end)
+        show:Play()
         return
     end
-
-    local prompt = needy_npc:FindFirstChildWhichIsA("ProximityPrompt")
-    prompt:Destroy()
+    
+    -- Pass
+    local data = self.subject._data
+    self.subject:notify({
+        xp = data.xp + 10,
+        people_helped = data.people_helped + 1
+    })
 
     -- Give the tool (food) to the npc
     needy_npc.Humanoid:EquipTool(tool_equipped)
     tool_equipped:Destroy()
     
-    if self.animation_playing then
-        self.animation:Stop()
-        self.animation_playing = false
-    end
-
     local ngos = workspace.NGOs:GetChildren()
     local nearest_distance = {Magnitude = math.huge}
     local nearest_ngo
@@ -154,7 +182,7 @@ function npcs_manager:donate_food_to_needy()
         warn("No path found")
         return
     end
-
+    
     -- Make the npc collide only with the ground
     self:change_parts_collision_group("npc_walk_mode")
     
@@ -163,49 +191,39 @@ function npcs_manager:donate_food_to_needy()
     local animation = needy_npc["Animate"]["walk"]:GetChildren()[1]
     
     local animation_track = animator:LoadAnimation(animation)
-    animation_track:Play()
-
     local waypoints = path:GetWaypoints()
     local next_waypoint_index = 1
     local humanoid = needy_npc.Humanoid
 
-    local function move_to_next_waypoint()
-        if next_waypoint_index <= #waypoints then
-            local waypoint = waypoints[next_waypoint_index]
-            
-            humanoid:MoveTo(waypoint.Position)
-            
-            local connection
-            connection = humanoid.MoveToFinished:Connect(function(reached)
-                if reached then
-                    next_waypoint_index = next_waypoint_index + 1
-                    connection:Disconnect()
-                    move_to_next_waypoint()
-                end
-            end)
-        else
-            -- Reached the last waypoint
-            self:change_parts_collision_group("Default")
-            
-            -- Stop walk animation
-            animation_track:Stop()
-            
-            -- Make the needy npc disappear
-            for _, descendant in ipairs(needy_npc:GetDescendants()) do
-                local ok = pcall(function() return descendant["Transparency"] end)
-                if ok then
-                    local tween = self.core.common.tween_service:Create(descendant, TweenInfo.new(0.5), {Transparency = 1})
-                    tween.Completed:Connect(function()
-                        tween:Destroy()
-                        tween = nil
-                    end)
-                    tween:Play()
-                end
-            end
-        end
+    -- Set Anchored to false for this npc to be able to move
+    needy_npc["HumanoidRootPart"].Anchored = false
+    
+    if self.animation_playing then
+        self.animation:Stop()
+        self.animation_playing = false
     end
 
-    move_to_next_waypoint()
+    animation_track:Play()
+    self:move_to_next_waypoint(next_waypoint_index, waypoints, humanoid, function()
+        -- Reached the last waypoint
+        self:change_parts_collision_group("Default")
+        
+        -- Stop animation
+        animation_track:Stop()
+        
+        -- Make the needy npc disappear
+        for _, descendant in ipairs(needy_npc:GetDescendants()) do
+            local ok = pcall(function() return descendant["Transparency"] end)
+            if ok then
+                local tween = self.core.common.tween_service:Create(descendant, TweenInfo.new(0.5), {Transparency = 1})
+                tween.Completed:Connect(function()
+                    tween:Destroy()
+                    tween = nil
+                end)
+                tween:Play()
+            end
+        end
+    end)
 end
 
 function npcs_manager:connect_prompt_triggered(data)
@@ -256,11 +274,87 @@ function npcs_manager:load_npcs()
     end
 end
 
+local function find_road_parts()
+    local road_parts = {}
+    local road_folder = workspace.Road
+    
+    for _, model in ipairs(road_folder:GetChildren()) do
+        for _, child in ipairs(model:GetChildren()) do
+            for _, descendant in ipairs(child:GetDescendants()) do
+                if descendant:IsA("MeshPart") then
+                    table.insert(road_parts, descendant)
+                end
+            end
+        end
+    end
+    
+    return road_parts
+end
+
+local function generate_walk_points(road_parts)
+    local walk_points = {}
+    
+    for _, road_part in ipairs(road_parts) do
+        local size = road_part.Size
+        local position = road_part.Position
+        
+        for _ = 1, 5 do
+            local random_x = position.X + math.random(-size.X/2, size.X/2)
+            local random_z = position.Z + math.random(-size.Z/2, size.Z/2)
+            local walk_point = Vector3.new(random_x, position.Y + 2, random_z)
+            table.insert(walk_points, walk_point)
+        end
+    end
+    
+    return walk_points
+end
+
+local function make_civilian_walk(civilian, walk_points)
+    while true do
+        local current_position = civilian.HumanoidRootPart.Position
+        local nearest_point, nearest_distance = nil, math.huge
+        
+        for _, point in ipairs(walk_points) do
+            local distance = (point - current_position).Magnitude
+            if distance < nearest_distance then
+                nearest_point = point
+                nearest_distance = distance
+            end
+        end
+        
+        local path = npcs_manager:create_n_calculate_path(civilian, nearest_point)
+        
+        local waypoints = path:GetWaypoints()
+        local next_waypoint_index = 1
+        local humanoid = civilian.Humanoid
+        
+        npcs_manager:move_to_next_waypoint(next_waypoint_index, waypoints, humanoid, function()
+            table.remove(walk_points, table.find(walk_points, nearest_point))
+            
+            if #walk_points == 0 then
+                walk_points = generate_walk_points(find_road_parts())
+            end
+        end)
+    end
+end
+
 function npcs_manager:load_async(_core)
+    local xp_manager = _core:get_module("xp_manager")
+    local xp = xp_manager.xp
+    local observer = _core:get_singleton("observer")
+    local npcs_observer = observer.new(function(data)
+        xp_manager.hud.xp_info.Text = tostring(data.xp)
+        xp_manager.hud.people_helped_info.Text = tostring(data.people_helped)
+    end)
+
+    xp:attach(npcs_observer)
+    self.observer = npcs_observer
+    self.subject = xp
+
     self.core = _core
 
     -- Get component singleton
-    local component = self.core:get_singleton("component")
+    --local component = self.core:get_singleton("component")
 
     -- Load npcs
     self:load_npcs()
@@ -303,21 +397,57 @@ function npcs_manager:load_async(_core)
             return npc.model:GetAttribute("id") == "needy_v1"
         end,
         function(npc)
-            local prompt = Instance.new("ProximityPrompt")
-            prompt.HoldDuration = 0.5
-            prompt.ActionText = "Speak"
-            prompt.ObjectText = "Speak with " .. npc.model:GetAttribute("name")
-            prompt.MaxActivationDistance = 5
-            prompt.Name = "interact"
-            prompt.Parent = npc.model
-    
-            npc:connect_prompt_triggered({
-                prompt = prompt,
-                callback = function()
-                    component:get("Dialog", npc.name):show()
-                    --npc:donate_food_to_needy()
+            local dialog = Instance.new("Dialog")
+            dialog.Parent = npc.model:WaitForChild("Head", 5)
+            dialog.Name = "dialog_needy_1"
+            dialog.InitialPrompt = "I'm hungry, can you donate some food?"
+            dialog.GoodbyeDialog = "No"
+            dialog.TriggerDistance = 4
+            dialog.GoodbyeChoiceActive = false
+            
+            dialog.DialogChoiceSelected:Connect(function(_player, choice)
+                if choice.Name == "1_choice_yes" then
+                    npc:donate_food_to_needy()
                 end
-            })
+            end)
+            
+            local choice_no1 = Instance.new("DialogChoice")
+            choice_no1.Parent = dialog
+            choice_no1.Name = "2_choice_no"
+            choice_no1.UserDialog = "No"
+            choice_no1.ResponseDialog = "Oh, okay..."
+            choice_no1.GoodbyeChoiceActive = false
+            
+            local choice_yes1 = Instance.new("DialogChoice")
+            choice_yes1.Parent = dialog
+            choice_yes1.Name = "1_choice_yes"
+            choice_yes1.UserDialog = "Yes"
+            choice_yes1.ResponseDialog = "Oh, thank you so much!"
+            choice_yes1.GoodbyeChoiceActive = false
+        end
+    )(
+        function(predicate, callback)
+            for _, npc in ipairs(npcs_manager.objects) do
+                if predicate(npc) then
+                    callback(npc)
+                end
+            end
+        end
+    )
+    
+    self.core.filter_call(
+        function(npc)
+            return npc.model:GetAttribute("id") == "civil_v1"
+        end,
+        function(npc)
+            -- Find all the road parts in the city
+            local road_parts = find_road_parts()
+            
+            -- Generate random walk points above the road parts
+            local walk_points = generate_walk_points(road_parts)
+            
+            -- Make the civilian walk along the walk points
+            make_civilian_walk(npc.model, walk_points)
         end
     )(
         function(predicate, callback)

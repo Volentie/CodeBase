@@ -1,8 +1,5 @@
-local subject = {
-	__index = function(self, k)
-		return self[k]
-	end
-}
+local subject = {}
+subject.__index = subject
 
 function subject.new()
 	local self = setmetatable({

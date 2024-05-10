@@ -24,8 +24,15 @@ local core = {
     configs = {},
     uis = {},
     singletons = {},
-    packages = {}
+    packages = {},
+    name = "Fox",
 } :: core
+
+-- Set pretty name for debugging purposes
+do
+    local str = core.name:gsub("%w+", string.upper)
+    core.pretty_name = str:gsub("(.+)", "-=:[%1 DEBUG]:=-")
+end
 
 local core_behaviour = {
     get_module = function(self: core, module_name: string): table
@@ -50,26 +57,32 @@ local core_behaviour = {
 setmetatable(core, {__index = core_behaviour})
 
 local function call_remote()
+    local function get_back()
+        for _, npc_model in workspace.NPCs.Needy:GetChildren() do
+            task.spawn(function()
+                local hrp = npc_model:FindFirstChild("HumanoidRootPart")
+                while not hrp do
+                    hrp = npc_model:FindFirstChild("HumanoidRootPart")
+                    task.wait(0.1)
+                end
+                npc_model:WaitForChild("HumanoidRootPart").Anchored = true
+            end)
+        end
+    end
+
     local remoteFunction = game.ReplicatedStorage:WaitForChild("SetNetworkOwnershipFunction")
     remoteFunction:InvokeServer()
     -- Get response
     remoteFunction.OnClientInvoke = function(response)
-        assert(response, "Failed to set network ownership")
-        for _, npc_model in workspace.NPCs.Needy:GetChildren() do
-            task.spawn(function()
-                for _, descendant in ipairs(npc_model:GetDescendants()) do
-                    if descendant:IsA("BasePart") then
-                        descendant.Anchored = true
-                    end
-                end
-            end)
-        end
+        task.spawn(get_back)
+        return
     end
+
 end
 
 local function debug(...)
     if DEBUG_MODE then
-        warn(":=[FOX DEBUG]=:", ...)
+        warn(core.pretty_name, ...)
     end
 end
 
@@ -83,7 +96,6 @@ local function boot()
         Boot sequence n' availability:
             1. Load packages (core.packages)
             2. Include singleton templates (core.singletons)
-            3. Load UIs (core.uis)
             4. Require modules and configs (core.modules, core.configs)
             5. Load sync of modules
             6. Load async of modules
