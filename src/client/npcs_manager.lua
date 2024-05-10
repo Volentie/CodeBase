@@ -212,6 +212,7 @@ function npcs_manager:donate_food_to_needy()
         animation_track:Stop()
         
         -- Make the needy npc disappear
+        local last_tween = nil
         for _, descendant in ipairs(needy_npc:GetDescendants()) do
             local ok = pcall(function() return descendant["Transparency"] end)
             if ok then
@@ -221,8 +222,12 @@ function npcs_manager:donate_food_to_needy()
                     tween = nil
                 end)
                 tween:Play()
+                last_tween = tween
             end
         end
+        last_tween.Completed:Connect(function()
+            needy_npc:Destroy()
+        end)
     end)
 end
 
