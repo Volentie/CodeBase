@@ -1,7 +1,7 @@
 local TweenService = game:GetService("TweenService")
 -- Table that will contain all the npcs in the game
 local npcs_manager = {
-    objects = {},
+    objects = {}
 }
 
 function npcs_manager.new(data: table)
@@ -121,9 +121,7 @@ end
 function npcs_manager:move_to_next_waypoint(next_waypoint_index, waypoints, humanoid, and_then)
     if next_waypoint_index <= #waypoints then
         local waypoint = waypoints[next_waypoint_index]
-        
         humanoid:MoveTo(waypoint.Position)
-        
         local connection
         connection = humanoid.MoveToFinished:Connect(function(reached)
             if reached then
@@ -183,14 +181,9 @@ function npcs_manager:donate_food_to_needy()
         return
     end
     
-    -- Make the npc collide only with the ground
-    self:change_parts_collision_group("npc_walk_mode")
     
-    -- Play the default roblox walk animation on the npc
-    local animator = needy_npc.Humanoid:FindFirstChildOfClass("Animator")
-    local animation = needy_npc["Animate"]["walk"]:GetChildren()[1]
+    local animation_manager = self.core:get_module("animation_manager")
     
-    local animation_track = animator:LoadAnimation(animation)
     local waypoints = path:GetWaypoints()
     local next_waypoint_index = 1
     local humanoid = needy_npc.Humanoid
@@ -203,15 +196,10 @@ function npcs_manager:donate_food_to_needy()
         self.animation_playing = false
     end
 
-    animation_track:Play()
+    animation_manager:play_animation(needy_npc, "kinetic/walk")
+    local walkAnim = needy_npc.Humanoid:GetPlayingAnimationTracks()[1]
+    walkAnim.Priority = Enum.AnimationPriority.Action
     self:move_to_next_waypoint(next_waypoint_index, waypoints, humanoid, function()
-        -- Reached the last waypoint
-        self:change_parts_collision_group("Default")
-        
-        -- Stop animation
-        animation_track:Stop()
-        
-        -- Make the needy npc disappear
         local last_tween = nil
         for _, descendant in ipairs(needy_npc:GetDescendants()) do
             local ok = pcall(function() return descendant["Transparency"] end)
@@ -259,88 +247,99 @@ function npcs_manager:load_npcs()
 
     local folder = self.core.common.npcs_folder
     local descendants = folder:GetDescendants()
-    for _, npc in ipairs(descendants) do
+    for _, npc_model in ipairs(descendants) do
         -- Positive checking =)
-        if npc:IsA("Model") then
-            local npc_name = npc:GetAttribute("name")
-            if npc.Name ~= npc_name then
-                npc.Name = npc_name
-                warn("Name attribute doesn't match the name attribute of the npc model:\t\t", npc_name, npc.Name)
+        if npc_model:IsA("Model") then
+            local npc_name = npc_model:GetAttribute("name")
+            if npc_model.Name ~= npc_name then
+                npc_model.Name = npc_name
+                warn("Name attribute doesn't match the name attribute of the npc model:\t\t", npc_name, npc_model.Name)
             end
 
             local npc_instance = npcs_manager.new({
-                id = npc:GetAttribute("id"),
-                model = npc,
+                id = npc_model:GetAttribute("id"),
+                model = npc_model,
                 name = npc_name
             })
-
             npc_instance:try_load_animation()
         end
     end
 end
 
-local function find_road_parts()
-    local road_parts = {}
+
+function npcs_manager:get_road_attachments(eliminate: table?)
+    local road_atts = {}
     local road_folder = workspace.Road
-    
     for _, model in ipairs(road_folder:GetChildren()) do
-        for _, child in ipairs(model:GetChildren()) do
-            for _, descendant in ipairs(child:GetDescendants()) do
-                if descendant:IsA("MeshPart") then
-                    table.insert(road_parts, descendant)
+        for _, obj in ipairs(model:GetDescendants()) do
+            if obj:IsA("Attachment") then
+                local skip = false
+                if eliminate then
+                    for _, attachment in ipairs(eliminate) do
+                        if attachment == obj then
+                            skip = not skip
+                            break
+                        end
+                    end
+                    if skip then
+                        continue
+                    end
                 end
+                table.insert(road_atts, obj)
             end
         end
     end
-    
-    return road_parts
+    return road_atts
 end
 
-local function generate_walk_points(road_parts)
-    local walk_points = {}
+function npcs_manager:make_civil_walk(eliminate: table?)
+    local walk_points = self:get_road_attachments(eliminate)
+    local npc = self
     
-    for _, road_part in ipairs(road_parts) do
-        local size = road_part.Size
-        local position = road_part.Position
-        
-        for _ = 1, 5 do
-            local random_x = position.X + math.random(-size.X/2, size.X/2)
-            local random_z = position.Z + math.random(-size.Z/2, size.Z/2)
-            local walk_point = Vector3.new(random_x, position.Y + 2, random_z)
-            table.insert(walk_points, walk_point)
-        end
-    end
-    
-    return walk_points
-end
+    eliminate = eliminate or {}
 
-local function make_civilian_walk(civilian, walk_points)
-    while true do
-        local current_position = civilian.HumanoidRootPart.Position
-        local nearest_point, nearest_distance = nil, math.huge
-        
-        for _, point in ipairs(walk_points) do
-            local distance = (point - current_position).Magnitude
-            if distance < nearest_distance then
-                nearest_point = point
-                nearest_distance = distance
+    local npc_pos = npc.model.HumanoidRootPart.Position
+
+    local function find_closest_walk_point_to()
+        local closest_distance = math.huge
+        local closest_walk_attachment
+        for _, walk_attachment in ipairs(walk_points) do
+            local walk_point = walk_attachment.WorldPosition
+            local distance = (npc_pos - walk_point).Magnitude
+            if distance < closest_distance then
+                closest_distance = distance
+                closest_walk_attachment = walk_attachment
             end
         end
-        
-        local path = npcs_manager:create_n_calculate_path(civilian, nearest_point)
-        
-        local waypoints = path:GetWaypoints()
-        local next_waypoint_index = 1
-        local humanoid = civilian.Humanoid
-        
-        npcs_manager:move_to_next_waypoint(next_waypoint_index, waypoints, humanoid, function()
-            table.remove(walk_points, table.find(walk_points, nearest_point))
-            
-            if #walk_points == 0 then
-                walk_points = generate_walk_points(find_road_parts())
-            end
-        end)
+        return closest_walk_attachment
     end
+
+    local humanoid = npc.model.Humanoid
+    
+    -- Find the first closest walk point to the npc
+    local closest_walk_attachment = find_closest_walk_point_to()
+    local closest_walk_point = closest_walk_attachment.WorldPosition
+    
+    -- Calculate the path
+    local path = self:create_n_calculate_path(npc.model, closest_walk_point)
+    if path.Status == Enum.PathStatus.NoPath then
+        warn("No path found")
+        return
+    end
+
+    local waypoints = path:GetWaypoints()
+    local next_waypoint_index = 1
+
+    -- Make the npc walk to the next waypoint
+    self:move_to_next_waypoint(next_waypoint_index, waypoints, humanoid, function()
+        -- When it reaches the last waypoint, look for the next closest walk point in a infinite loop to close a routine
+        table.insert(eliminate, closest_walk_attachment)
+        if #eliminate > 4 then
+            table.remove(eliminate, 1)
+        end
+        npc:make_civil_walk(eliminate)
+    end)
+
 end
 
 function npcs_manager:load_async(_core)
@@ -348,7 +347,6 @@ function npcs_manager:load_async(_core)
     local xp = xp_manager.xp
     local observer = _core:get_singleton("observer")
     local npcs_observer = observer.new(function(data)
-        xp_manager.hud.xp_info.Text = tostring(data.xp)
         xp_manager.hud.people_helped_info.Text = tostring(data.people_helped)
     end)
 
@@ -357,9 +355,6 @@ function npcs_manager:load_async(_core)
     self.subject = xp
 
     self.core = _core
-
-    -- Get component singleton
-    --local component = self.core:get_singleton("component")
 
     -- Load npcs
     self:load_npcs()
@@ -445,25 +440,18 @@ function npcs_manager:load_async(_core)
             return npc.model:GetAttribute("id") == "civil_v1"
         end,
         function(npc)
-            -- Find all the road parts in the city
-            local road_parts = find_road_parts()
-            
-            -- Generate random walk points above the road parts
-            local walk_points = generate_walk_points(road_parts)
-            
-            -- Make the civilian walk along the walk points
-            make_civilian_walk(npc.model, walk_points)
+            npc:change_parts_collision_group("npc_walk_mode")
+            npc:make_civil_walk()
         end
     )(
         function(predicate, callback)
             for _, npc in ipairs(npcs_manager.objects) do
                 if predicate(npc) then
-                    callback(npc)
+                    task.spawn(callback, npc)
                 end
             end
         end
     )
-
 end
 
 return npcs_manager

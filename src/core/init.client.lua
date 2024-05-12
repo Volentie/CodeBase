@@ -1,4 +1,3 @@
---!nonstrict
 --=== CONFIG
 local folder_struct = {
     Server = "ServerScriptService/server",
@@ -56,6 +55,44 @@ local core_behaviour = {
 
 setmetatable(core, {__index = core_behaviour})
 
+core.cache = {}
+
+--#region Loading screen
+-- Loading screen (TODO: Move to a separate module)
+function core:create_loading_screen()
+    self.cache["loading_screen"] = _common.player_gui:WaitForChild("HUD"):WaitForChild("loading")
+    local loading_screen_text = self.cache["loading_screen"]:WaitForChild("TextLabel")
+    self.cache["loading_routine"] = coroutine.create(function()
+        while true do
+            loading_screen_text.Text = "Loading"
+            task.wait(0.5)
+            loading_screen_text.Text = "Loading."
+            task.wait(0.5)
+            loading_screen_text.Text = "Loading.."
+            task.wait(0.5)
+            loading_screen_text.Text = "Loading..."
+            task.wait(0.5)
+        end
+    end)
+    self.cache["loading_blur"] = _common.lighting:WaitForChild("Blur")
+end
+function core:show_loading_screen()
+    self.cache["loading_blur"].Enabled = true
+    self.cache["loading_screen"].Visible = true
+    coroutine.resume(self.cache["loading_routine"])
+end
+function core:destroy_loading_screen()
+    self.cache["loading_blur"].Enabled = false
+    self.cache["loading_screen"].Visible = false
+    coroutine.close(self.cache["loading_routine"])
+    self.cache["loading_routine"] = nil
+    self.cache["loading_screen"]:Destroy()
+    self.cache["loading_screen"] = nil
+    self.cache["loading_blur"]:Destroy()
+    self.cache["loading_blur"] = nil
+end
+--#endregion Loading screen
+
 local function call_remote()
     local function get_back()
         for _, npc_model in workspace.NPCs.Needy:GetChildren() do
@@ -87,7 +124,9 @@ local function debug(...)
 end
 
 local function boot()
-
+    -- Show loading screen
+    core:create_loading_screen()
+    core:show_loading_screen()
     -- Set network ownership of NPCs to the client before anything
     -- Humanoid control doesn't work properly otherwise
     call_remote()
@@ -158,18 +197,43 @@ local function boot()
     
     local function load_all_sync()
         for module_name, module in core.modules do
-            pcall(module.load_sync, module, core)
+            if not module.load_sync then
+                continue
+            end
+            module:load_sync(core)
             module.load_sync = nil
             debug("(Module) Loaded sync of:", module_name)
         end
     end
 
     local function load_all_async()
+        local async_tasks = {}
+        
         for module_name, module in core.modules do
-            pcall(task.spawn, module.load_async, module, core)
-            module.load_async = nil
-            debug("(Module) Loaded async of:", module_name)
+            if not module.load_async then
+                continue
+            end
+            local _task = task.spawn(function()
+                module:load_async(core)
+                module.load_async = nil
+            end)
+            debug("(Module) Called async of:", module_name)
+            async_tasks[module_name] = _task
         end
+        
+        -- Create a separate thread to monitor async tasks
+        task.spawn(function()
+            -- Wait for all async tasks to complete
+            for module_name, async_task in pairs(async_tasks) do
+                while coroutine.status(async_task) ~= "dead" do
+                    task.wait()
+                end
+                debug("(Module) Finished loading async of:", module_name)
+            end
+            -- All async tasks are done, hide the loading screen
+            core:destroy_loading_screen()
+            debug(string.rep("-", 10), "CORE BOOT SEQUENCE FINISHED", string.rep("-", 10), core.pretty_name)
+        end)
     end
 
     local function require_modules_n_configs()
