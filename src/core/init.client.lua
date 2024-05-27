@@ -76,6 +76,7 @@ function core:create_loading_screen()
     end)
     self.cache["loading_blur"] = _common.lighting:WaitForChild("Blur")
 end
+
 function core:show_loading_screen()
     self.cache["loading_blur"].Enabled = true
     self.cache["loading_screen"].Visible = true
@@ -110,11 +111,10 @@ local function call_remote()
     local remoteFunction = game.ReplicatedStorage:WaitForChild("SetNetworkOwnershipFunction")
     remoteFunction:InvokeServer()
     -- Get response
-    remoteFunction.OnClientInvoke = function(response)
+    remoteFunction.OnClientInvoke = function(_response)
         task.spawn(get_back)
         return
     end
-
 end
 
 local function debug(...)

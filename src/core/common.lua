@@ -23,6 +23,7 @@ local Players = get_service("Players")
 local RunService = get_service("RunService")
 local PathfindingService = get_service("PathfindingService")
 local PhysicsService = get_service("PhysicsService")
+local TextChatService = get_service("TextChatService")
 
 local LocalPlayer = Players.LocalPlayer
 if LocalPlayer == nil then
@@ -63,4 +64,5 @@ return {
     starter_player_scripts = StarterPlayerScripts,
     pathfinding_service = PathfindingService,
     physics_service = PhysicsService,
+    text_chat_service = TextChatService,
 }

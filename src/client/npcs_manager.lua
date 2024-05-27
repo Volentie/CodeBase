@@ -97,9 +97,11 @@ function npcs_manager:create_n_calculate_path(npc, target_pos)
         AgentHeight = 5,
         AgentCanJump = true,
         AgentCanClimb = true,
+        -- Make the sidewalks the best choice to walk onto (default = 1, set higher for those should be ignored)
         Costs = {
+            Pavement = 1,
             Water = 10,
-            Grass = 1
+            Grass = 5
         },
         IncludeWaypoints = true,
         WaypointSpacing = 5
@@ -190,15 +192,21 @@ function npcs_manager:donate_food_to_needy()
 
     -- Set Anchored to false for this npc to be able to move
     needy_npc["HumanoidRootPart"].Anchored = false
-    
+   
+    -- Stop sit animation
     if self.animation_playing then
         self.animation:Stop()
         self.animation_playing = false
     end
-
+    
+    -- Wait some seconds so the player can see the npc before it starts walking
+    task.wait(1.7)
+    
+    -- Play walk animation
     animation_manager:play_animation(needy_npc, "kinetic/walk")
     local walkAnim = needy_npc.Humanoid:GetPlayingAnimationTracks()[1]
     walkAnim.Priority = Enum.AnimationPriority.Action
+
     self:move_to_next_waypoint(next_waypoint_index, waypoints, humanoid, function()
         local last_tween = nil
         for _, descendant in ipairs(needy_npc:GetDescendants()) do
@@ -298,7 +306,7 @@ function npcs_manager:make_civil_walk(eliminate: table?)
     
     eliminate = eliminate or {}
 
-    local npc_pos = npc.model.HumanoidRootPart.Position
+    local npc_pos = npc.model:WaitForChild("HumanoidRootPart").Position
 
     local function find_closest_walk_point_to()
         local closest_distance = math.huge
@@ -343,6 +351,9 @@ function npcs_manager:make_civil_walk(eliminate: table?)
 end
 
 function npcs_manager:load_async(_core)
+    self.core = _core
+    local common = self.core.common
+    local text_chat_service = common.text_chat_service
     local xp_manager = _core:get_module("xp_manager")
     local xp = xp_manager.xp
     local observer = _core:get_singleton("observer")
@@ -354,10 +365,50 @@ function npcs_manager:load_async(_core)
     self.observer = npcs_observer
     self.subject = xp
 
-    self.core = _core
 
     -- Load npcs
     self:load_npcs()
+    
+    do -- Chat bubble configuration
+        -- Bubble chat properties to customize
+        --#region bubble_chat_props
+        local bubble_configuration = {
+            BackgroundColor3 = Color3.fromHex("F5CD30"),
+            BackgroundTransparency = 0.5,
+            FontFace = Font.fromEnum(Enum.Font.SourceSans),
+            TailVisible = true, -- Determines if the tail at the bottom of the text chat bubbles is visible.
+            TextColor3 = Color3.fromHSV(0.7, 0.8, 0.9), -- Color of bubble text.
+            TextSize = 20, -- Size of bubble text.
+        }
+        --#endregion bubble_chat_props
+
+        function text_chat_service.OnBubbleAdded(_message: TextChatMessage, _adornee: Instance)
+            local bubbleProperties = Instance.new("BubbleChatMessageProperties")
+            for key, value in pairs(bubble_configuration) do
+                bubbleProperties[key] = value
+            end
+            return bubbleProperties
+        end
+    end
+
+    local function create_n_attach_prompt(parent: Model, props: table)
+        assert(parent, "Parent required")
+        assert(parent.ClassName == "Model", "Parent must be a model")
+        local hold_duration = props.hold_duration or 0
+        local action_text = props.action_text or "Interact"
+        local object_text = props.object_text or ""
+        local distance = props.distance or 5
+        local name = props.name or "interactable_prompt"
+
+        local prompt = Instance.new("ProximityPrompt")
+        prompt.HoldDuration = hold_duration
+        prompt.ActionText = action_text
+        prompt.ObjectText = object_text
+        prompt.MaxActivationDistance = distance
+        prompt.Name = name
+        prompt.Parent = parent
+        return prompt
+    end
 
     -- Load npcs behaviours
     self.core.filter_call(
@@ -365,16 +416,12 @@ function npcs_manager:load_async(_core)
             return npc.model:GetAttribute("id") == "seller_v1"
         end,
         function(npc)
-            local prompt = Instance.new("ProximityPrompt")
-            prompt.HoldDuration = 0.5
-            prompt.ActionText = "Interact"
-            prompt.ObjectText = "Interact with " .. npc.model:GetAttribute("name")
-            prompt.MaxActivationDistance = 5
-            prompt.Name = "interact"
-            prompt.Parent = npc.model
-            
             npc:connect_lookat_player()
-            
+
+            local prompt = create_n_attach_prompt(npc.model, {
+                object_text = "Talk to " .. npc.name
+            })
+
             npc:connect_prompt_triggered({
                 prompt = prompt,
                 callback = function()
@@ -397,33 +444,14 @@ function npcs_manager:load_async(_core)
             return npc.model:GetAttribute("id") == "needy_v1"
         end,
         function(npc)
-            local dialog = Instance.new("Dialog")
-            dialog.Parent = npc.model:WaitForChild("Head", 5)
-            dialog.Name = "dialog_needy_1"
-            dialog.InitialPrompt = "I'm hungry, can you donate some food?"
-            dialog.GoodbyeDialog = "No"
-            dialog.TriggerDistance = 4
-            dialog.GoodbyeChoiceActive = false
+            local prompt = create_n_attach_prompt(npc.model, {
+                object_text = "Talk to " .. npc.name
+            })
             
-            dialog.DialogChoiceSelected:Connect(function(_player, choice)
-                if choice.Name == "1_choice_yes" then
-                    npc:donate_food_to_needy()
-                end
+            local npc_head = npc.model:WaitForChild("Head")
+            prompt.Triggered:Connect(function()
+                text_chat_service:DisplayBubble(npc_head, "Ho")
             end)
-            
-            local choice_no1 = Instance.new("DialogChoice")
-            choice_no1.Parent = dialog
-            choice_no1.Name = "2_choice_no"
-            choice_no1.UserDialog = "No"
-            choice_no1.ResponseDialog = "Oh, okay..."
-            choice_no1.GoodbyeChoiceActive = false
-            
-            local choice_yes1 = Instance.new("DialogChoice")
-            choice_yes1.Parent = dialog
-            choice_yes1.Name = "1_choice_yes"
-            choice_yes1.UserDialog = "Yes"
-            choice_yes1.ResponseDialog = "Oh, thank you so much!"
-            choice_yes1.GoodbyeChoiceActive = false
         end
     )(
         function(predicate, callback)

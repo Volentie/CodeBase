@@ -35,9 +35,15 @@ end
 function player_manager:bind_run(key: Enum.KeyCode)
     key = key or Enum.KeyCode.LeftShift
     local player = self.core.common.local_player
+    
+    local player_run_speed = self.configs.run_speed
+    
+    if self.core.common.run_service:IsStudio() then
+        player_run_speed *= 2
+    end
 
     self:bind_key(key, "InputBegan", function()
-        player.Character.Humanoid.WalkSpeed = self.configs.run_speed
+        player.Character.Humanoid.WalkSpeed = player_run_speed
     end)
 
     self:bind_key(key, "InputEnded", function()
