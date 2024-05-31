@@ -350,6 +350,29 @@ function npcs_manager:make_civil_walk(eliminate: table?)
 
 end
 
+-- TODO: Move dialog stuff to its own module
+function npcs_manager:create_conversation(messages_table: { [string]: {[string]: number} })
+    local DELAY = 1
+    local common = self.core.common
+    local text_chat_service = common.text_chat_service
+    local routine = coroutine.create(function()
+        table.sort(messages_table, function(a, b)
+            return a[1] < b[1]
+        end)
+        for speaker, msg_props in pairs(messages_table) do
+            for i, message in pairs(msg_props) do
+                if i == 1 then
+                    continue
+                end
+                text_chat_service:DisplayBubble(speaker, message)
+                task.wait(DELAY)
+            end
+        end
+    end)
+    coroutine.resume(routine)
+    return routine
+end
+
 function npcs_manager:load_async(_core)
     self.core = _core
     local common = self.core.common
@@ -369,25 +392,35 @@ function npcs_manager:load_async(_core)
     -- Load npcs
     self:load_npcs()
     
-    do -- Chat bubble configuration
-        -- Bubble chat properties to customize
-        --#region bubble_chat_props
-        local bubble_configuration = {
-            BackgroundColor3 = Color3.fromHex("F5CD30"),
+    do -- Bubble chat config
+        --#region bubble_chat_config
+        local bubble_chat_message_properties = {
+            BackgroundColor3 = Color3.fromHex("000000"),
             BackgroundTransparency = 0.5,
             FontFace = Font.fromEnum(Enum.Font.SourceSans),
             TailVisible = true, -- Determines if the tail at the bottom of the text chat bubbles is visible.
             TextColor3 = Color3.fromHSV(0.7, 0.8, 0.9), -- Color of bubble text.
             TextSize = 20, -- Size of bubble text.
         }
-        --#endregion bubble_chat_props
+        local bubble_chat_configuration = {
+            BubbleDuration = 2,
+            BubblesSpacing = 8,
+            MaxBubbles = 3,
+        }
+        --#endregion bubble_chat_config
 
         function text_chat_service.OnBubbleAdded(_message: TextChatMessage, _adornee: Instance)
             local bubbleProperties = Instance.new("BubbleChatMessageProperties")
-            for key, value in pairs(bubble_configuration) do
+            for key, value in pairs(bubble_chat_message_properties) do
                 bubbleProperties[key] = value
             end
             return bubbleProperties
+        end
+        
+        -- Apply bubble chat configuration
+        local BubbleChatConfiguration = text_chat_service:WaitForChild("BubbleChatConfiguration")
+        for key, value in pairs(bubble_chat_configuration) do
+            BubbleChatConfiguration[key] = value
         end
     end
 
@@ -395,7 +428,7 @@ function npcs_manager:load_async(_core)
         assert(parent, "Parent required")
         assert(parent.ClassName == "Model", "Parent must be a model")
         local hold_duration = props.hold_duration or 0
-        local action_text = props.action_text or "Interact"
+        local action_text = props.action_text or ""
         local object_text = props.object_text or ""
         local distance = props.distance or 5
         local name = props.name or "interactable_prompt"
@@ -419,7 +452,7 @@ function npcs_manager:load_async(_core)
             npc:connect_lookat_player()
 
             local prompt = create_n_attach_prompt(npc.model, {
-                object_text = "Talk to " .. npc.name
+                action_text = "Talk to " .. npc.name
             })
 
             npc:connect_prompt_triggered({
@@ -445,12 +478,31 @@ function npcs_manager:load_async(_core)
         end,
         function(npc)
             local prompt = create_n_attach_prompt(npc.model, {
-                object_text = "Talk to " .. npc.name
+                action_text = "Talk to " .. npc.name
             })
             
             local npc_head = npc.model:WaitForChild("Head")
+            -- NOW: CLONE THIS TO SELLERS
             prompt.Triggered:Connect(function()
-                text_chat_service:DisplayBubble(npc_head, "Ho")
+                self:create_conversation({
+                    [common.character_head] = {
+                        1,
+                        "Hi, how are you?",
+                    },
+                    [npc_head] = {
+                        2,
+                        "Good, but I'm hungry",
+                        "Could you please give me some food?",
+                    }
+                })
+            end)
+            
+            prompt.TriggerEnded:Connect(function()
+                task.spawn(function()
+                    prompt.Enabled = not prompt.Enabled
+                    task.wait(1.5)
+                    prompt.Enabled = not prompt.Enabled
+                end)
             end)
         end
     )(

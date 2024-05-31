@@ -31,6 +31,7 @@ if LocalPlayer == nil then
     LocalPlayer = Players.LocalPlayer
 end
 local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+local CharacterHead = Character:WaitForChild("Head")
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
 local NPCs_folder = workspace:WaitForChild("NPCs")
@@ -49,6 +50,7 @@ return {
     run_service = RunService,
     local_player = LocalPlayer,
     character = Character,
+    character_head = CharacterHead,
     humanoid = Character:WaitForChild("Humanoid"),
     humanoid_root_part = LocalPlayer.Character:WaitForChild("HumanoidRootPart"),
     replicated_storage = ReplicatedStorage,
