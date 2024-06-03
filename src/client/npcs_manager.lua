@@ -91,6 +91,13 @@ function npcs_manager:give_random_food()
     asset_object.Parent = self.core.common.local_player.Backpack
 end
 
+function npcs_manager:get_sanitizer()
+    local assets_folder = self.core.common.replicated_storage.assets
+    local sanitizer = assets_folder:FindFirstChild("sanitizer")
+    local sanitizer_object = sanitizer:Clone()
+    sanitizer_object.Parent = self.core.common.local_player.Backpack
+end
+
 function npcs_manager:create_n_calculate_path(npc, target_pos)
     local path = self.core.common.pathfinding_service:CreatePath({
         AgentRadius = 2,
@@ -137,39 +144,13 @@ function npcs_manager:move_to_next_waypoint(next_waypoint_index, waypoints, huma
     end
 end
 
-function npcs_manager:donate_food_to_needy()
-    local needy_npc = self.model
-    local tool_equipped = self.core.common.character:FindFirstChildWhichIsA("Tool")
-    if not tool_equipped then
-        local msg = game.Players.LocalPlayer.PlayerGui.HUD.info_1.text
-        msg.Text = "You need to have a food equipped to donate it!"
-        local show = TweenService:Create(msg, TweenInfo.new(1), {TextTransparency = 0})
-        show.Completed:Connect(function()
-            show:Destroy()
-            show = nil
-            TweenService:Create(msg, TweenInfo.new(1), {TextTransparency = 1}):Play()
-        end)
-        show:Play()
-        return
-    end
-    
-    -- Pass
-    local data = self.subject._data
-    self.subject:notify({
-        xp = data.xp + 10,
-        people_helped = data.people_helped + 1
-    })
-
-    -- Give the tool (food) to the npc
-    needy_npc.Humanoid:EquipTool(tool_equipped)
-    tool_equipped:Destroy()
-    
+function npcs_manager:bring_to_ngo(npc: Model)
     local ngos = workspace.NGOs:GetChildren()
     local nearest_distance = {Magnitude = math.huge}
     local nearest_ngo
     for _, ngo in ipairs(ngos) do
         local entrance_pos = ngo["corrimao.001"]:FindFirstChildWhichIsA("Attachment").WorldPosition
-        local distance = (entrance_pos - needy_npc:GetPivot().Position)
+        local distance = (entrance_pos - npc:GetPivot().Position)
         if distance.Magnitude < nearest_distance.Magnitude then
             nearest_distance = distance
             nearest_ngo = ngo
@@ -177,39 +158,39 @@ function npcs_manager:donate_food_to_needy()
     end
 
     -- Calculate the path
-    local path = self:create_n_calculate_path(needy_npc, nearest_ngo["corrimao.001"]:FindFirstChildWhichIsA("Attachment").WorldPosition)
+    local path = self:create_n_calculate_path(npc, nearest_ngo["corrimao.001"]:FindFirstChildWhichIsA("Attachment").WorldPosition)
     if path.Status == Enum.PathStatus.NoPath then
         warn("No path found")
         return
     end
     
-    
     local animation_manager = self.core:get_module("animation_manager")
     
     local waypoints = path:GetWaypoints()
     local next_waypoint_index = 1
-    local humanoid = needy_npc.Humanoid
+    local humanoid = npc.Humanoid
 
     -- Set Anchored to false for this npc to be able to move
-    needy_npc["HumanoidRootPart"].Anchored = false
+    npc["HumanoidRootPart"].Anchored = false
    
     -- Stop sit animation
+
     if self.animation_playing then
         self.animation:Stop()
         self.animation_playing = false
     end
     
     -- Wait some seconds so the player can see the npc before it starts walking
-    task.wait(1.7)
+    task.wait(0.5)
     
     -- Play walk animation
-    animation_manager:play_animation(needy_npc, "kinetic/walk")
-    local walkAnim = needy_npc.Humanoid:GetPlayingAnimationTracks()[1]
+    animation_manager:play_animation(npc, "kinetic/walk")
+    local walkAnim = npc.Humanoid:GetPlayingAnimationTracks()[1]
     walkAnim.Priority = Enum.AnimationPriority.Action
 
     self:move_to_next_waypoint(next_waypoint_index, waypoints, humanoid, function()
         local last_tween = nil
-        for _, descendant in ipairs(needy_npc:GetDescendants()) do
+        for _, descendant in ipairs(npc:GetDescendants()) do
             local ok = pcall(function() return descendant["Transparency"] end)
             if ok then
                 local tween = self.core.common.tween_service:Create(descendant, TweenInfo.new(0.5), {Transparency = 1})
@@ -222,21 +203,81 @@ function npcs_manager:donate_food_to_needy()
             end
         end
         last_tween.Completed:Connect(function()
-            needy_npc:Destroy()
+            npc:Destroy()
         end)
     end)
+end
+
+function npcs_manager:donate_food_to_needy(): boolean
+    local tool_equipped = self.core.common.character:FindFirstChildWhichIsA("Tool")
+    if not tool_equipped then
+        local msg = game.Players.LocalPlayer.PlayerGui.HUD.info_1.text
+        msg.Text = "You need to have a food equipped to donate it!"
+        local show = TweenService:Create(msg, TweenInfo.new(1), {TextTransparency = 0})
+        show.Completed:Connect(function()
+            show:Destroy()
+            show = nil
+            TweenService:Create(msg, TweenInfo.new(2), {TextTransparency = 1}):Play()
+        end)
+        show:Play()
+        return
+    end
+
+    self:create_conversation({
+        {
+            self.head,
+            "Thank you so much, I really appreciate it!"
+        },
+        {
+            self.core.common.character_head,
+            "My pleasure! I'm glad I could help you!"
+        }
+    })
+
+    -- Pass
+    self.xp_manager:increment_xp(5)
+    self.xp_manager:increment_people_helped()
+    self.bus:publish("update_xp")
+
+    tool_equipped:Destroy()
+    
+    return true
 end
 
 function npcs_manager:connect_prompt_triggered(data)
     local event_bus = self.core:get_singleton("event_bus")
     local bus = event_bus.new()
+    self.bus = bus
+    local type = data.type
     local callback = data.callback
     local prompt = data.prompt
     assert(callback, "Callback not provided")
     assert(prompt, "Prompt not provided")
 
-    bus:publish("subscribe_connection", prompt, "Triggered", callback)
+    local _callback = function()
+        if type == "dialog" then
+            self.player_manager:set_talking_npc(self)
+            if self.id == "seller_v1" then
+                npcs_manager.last_talker = self
+            end
+        end
+        callback()
+        self.player_manager:set_last_talking_npc(self)
+    end
+
+    bus:publish("subscribe_connection", prompt, "Triggered", _callback)
 end
+
+-- function npcs_manager:connect_prompt_trigger_ended(data)
+--     local event_bus = self.core:get_singleton("event_bus")
+--     local bus = event_bus.new()
+--     local callback = data.callback
+--     local prompt = data.prompt
+--     assert(callback, "Callback not provided")
+--     assert(prompt, "Prompt not provided")
+
+--     bus:publish("subscribe_connection", prompt, "TriggerEnded", callback)
+-- end
 
 function npcs_manager:load_npcs()
     if getmetatable(self) then
@@ -273,7 +314,6 @@ function npcs_manager:load_npcs()
         end
     end
 end
-
 
 function npcs_manager:get_road_attachments(eliminate: table?)
     local road_atts = {}
@@ -355,17 +395,17 @@ function npcs_manager:create_conversation(messages_table: { [string]: {[string]:
     local DELAY = 1
     local common = self.core.common
     local text_chat_service = common.text_chat_service
+    local function display_bubble(speaker, message, delay: boolean?)
+        text_chat_service:DisplayBubble(speaker, message)
+        if delay then
+            task.wait(DELAY)
+        end
+    end
     local routine = coroutine.create(function()
-        table.sort(messages_table, function(a, b)
-            return a[1] < b[1]
-        end)
-        for speaker, msg_props in pairs(messages_table) do
-            for i, message in pairs(msg_props) do
-                if i == 1 then
-                    continue
-                end
-                text_chat_service:DisplayBubble(speaker, message)
-                task.wait(DELAY)
+        for _, msg_props in ipairs(messages_table) do
+            local speaker = table.remove(msg_props, 1)
+            for _, message in ipairs(msg_props) do
+                display_bubble(speaker, message, true)
             end
         end
     end)
@@ -375,20 +415,16 @@ end
 
 function npcs_manager:load_async(_core)
     self.core = _core
+    self.selected_npc = nil
+    local event_bus = self.core:get_singleton("event_bus")
+    local bus = event_bus.new()
     local common = self.core.common
     local text_chat_service = common.text_chat_service
-    local xp_manager = _core:get_module("xp_manager")
-    local xp = xp_manager.xp
-    local observer = _core:get_singleton("observer")
-    local npcs_observer = observer.new(function(data)
-        xp_manager.hud.people_helped_info.Text = tostring(data.people_helped)
-    end)
-
-    xp:attach(npcs_observer)
-    self.observer = npcs_observer
-    self.subject = xp
-
-
+    self.xp_manager = _core:get_module("xp_manager")
+    self.xp = self.xp_manager.xp
+    local player_manager = _core:get_module("player_manager")
+    self.player_manager = player_manager
+    
     -- Load npcs
     self:load_npcs()
     
@@ -444,94 +480,290 @@ function npcs_manager:load_async(_core)
     end
 
     -- Load npcs behaviours
-    self.core.filter_call(
-        function(npc)
-            return npc.model:GetAttribute("id") == "seller_v1"
-        end,
-        function(npc)
-            npc:connect_lookat_player()
-
-            local prompt = create_n_attach_prompt(npc.model, {
-                action_text = "Talk to " .. npc.name
-            })
-
-            npc:connect_prompt_triggered({
-                prompt = prompt,
-                callback = function()
-                    npc:give_random_food()
-                end
-            })
+    local function delete_old_prompt(npc)
+        local prompt = npc.model:FindFirstChild("interactable_prompt")
+        if prompt then
+            prompt:Destroy()
         end
-    )(
-        function(predicate, callback)
-            for _, npc in ipairs(npcs_manager.objects) do
-                if predicate(npc) then
-                    callback(npc)
-                end
+    end
+    
+    local function _filter(predicate, callback)
+        for _, npc in ipairs(npcs_manager.objects) do
+            if predicate(npc) then
+                npc.head = npc.model:WaitForChild("Head")
+                npc.prompt_delay = 2
+                callback(npc)
             end
         end
-    )
+    end
+    
+    local function _predicate(id)
+        return function(npc)
+            return npc.model:GetAttribute("id") == id
+        end
+    end
+    
+    function self.filtered_map(filter_id: string | table, callback: (table) -> any)
+        self.core.filter_call(
+            _predicate(filter_id),
+            callback
+        )(_filter)
+    end
 
-    self.core.filter_call(
-        function(npc)
-            return npc.model:GetAttribute("id") == "needy_v1"
-        end,
-        function(npc)
-            local prompt = create_n_attach_prompt(npc.model, {
-                action_text = "Talk to " .. npc.name
-            })
-            
-            local npc_head = npc.model:WaitForChild("Head")
-            -- NOW: CLONE THIS TO SELLERS
-            prompt.Triggered:Connect(function()
+    -- local DIALOG_RANGE = 10
+    -- bus:publish("subscribe_connection", common.run_service, "Heartbeat", function(_dt)
+    --     local is_talking = player_manager:is_talking()
+    --     if is_talking then
+    --         local ply_pos = common.humanoid_root_part.Position
+    --         local npc_obj = player_manager:get_talking_npc()
+    --         local talking_npc = npc_obj.model
+    --         local prompt_enabled = talking_npc:FindFirstChild("interactable_prompt").Enabled
+    --         local npc_pos = talking_npc.HumanoidRootPart.Position
+    --         local dist_vec3 = npc_pos - ply_pos
+    --         local abs_dist = math.abs(dist_vec3.Magnitude)
+    --         if abs_dist < DIALOG_RANGE and prompt_enabled then
+    --             talking_npc:FindFirstChild("interactable_prompt").Enabled = false
+    --         elseif abs_dist > DIALOG_RANGE and not prompt_enabled then
+    --             talking_npc:FindFirstChild("interactable_prompt").Enabled = true
+    --             local npc_type = talking_npc:GetAttribute("id")
+    --             if npc_type == "seller_v1" then
+    --                 bus:publish("hide_seller_dialog")
+    --             elseif npc_type == "needy_v1" then
+    --                 bus:publish("hide_food_dialog")
+    --             end
+    --             bus:publish("stop_talking", talking_npc)
+    --         end
+    --     end
+    -- end)
+    
+    self.filtered_map("seller_v1", function(npc)
+        npc:connect_lookat_player()
+        local prompt = create_n_attach_prompt(npc.model, {
+            action_text = "Talk to " .. npc.name
+        })
+        npc:connect_prompt_triggered({
+            type = "fast_dialog",
+            prompt = prompt,
+            callback = function()
                 self:create_conversation({
-                    [common.character_head] = {
-                        1,
+                    {
+                        npc.head,
+                        "Hello! Please help the people in need, I'm sure they will appreciate it!"
+                    }
+                })
+                npc:give_random_food()
+            end
+        })
+        -- npc:connect_prompt_trigger_ended({
+        --     prompt = prompt,
+        --     callback = function()
+        --         task.spawn(function()
+        --             prompt.Enabled = not prompt.Enabled
+        --             task.wait(npc.prompt_delay)
+        --             prompt.Enabled = not prompt.Enabled
+        --         end)
+        --     end
+        -- })
+    end)
+    
+    self.filtered_map("needy_v1", function(npc)
+        local prompt = create_n_attach_prompt(npc.model, {
+            action_text = "Talk to " .. npc.name
+        })
+        npc:connect_prompt_triggered({
+            type = "dialog",
+            prompt = prompt,
+            callback = function()
+                local handler
+                handler = function()
+                    player_manager:get_talking_npc():donate_food_to_needy()
+                    bus:publish("stop_talking", npc.model)
+                end
+                bus:subscribe("yes_chosen", handler)
+                local routine = self:create_conversation({
+                    {
+                        common.character_head,
                         "Hi, how are you?",
                     },
-                    [npc_head] = {
-                        2,
+                    {
+                        npc.head,
                         "Good, but I'm hungry",
                         "Could you please give me some food?",
                     }
                 })
+                -- Wait for the previous routine to end and then opens dialog
+                while coroutine.status(routine) ~= "dead" do
+                    task.wait()
+                end
+                bus:publish("show_food_dialog")
+            end
+        })
+    end)
+    
+    self.filtered_map("civil_v1", function(npc)
+        npc:change_parts_collision_group("npc_walk_mode")
+        npc:make_civil_walk()
+    end)
+
+    local function sanitizer_handler()
+        self:create_conversation({
+            {
+                common.character_head,
+                "Thank you for the sanitizer!",
+            },
+        })
+        self:get_sanitizer()
+        bus:publish("stop_talking", player_manager:get_talking_npc().model)
+    end
+	bus:subscribe("get_sanitizer_chosen", sanitizer_handler)
+
+    local function food_handler()
+        local routine = self:create_conversation({
+            {
+                common.character_head,
+                "Thank you for the food!",
+            },
+        })
+        while coroutine.status(routine) ~= "dead" do
+            task.wait()
+        end
+        self:give_random_food()
+        bus:publish("stop_talking", player_manager:get_talking_npc().model)
+    end
+	bus:subscribe("get_food_chosen", food_handler)
+
+    local function job_handler()
+        local npc_head = player_manager:get_talking_npc().model:FindFirstChild("Head")
+        self:create_conversation({
+            {
+                common.character_head,
+                "Thank you for the opportunity of helping someone!",
+            },
+            {
+                npc_head,
+                "Go find someone in need and hire them!"
+            }
+        })
+        player_manager:look_for_job()
+        bus:publish("stop_talking", player_manager:get_talking_npc().model)
+    end
+	bus:subscribe("get_job_chosen", job_handler)
+    
+    bus:subscribe("stop_looking_for_job", function()
+        local npc = player_manager:get_last_talking_npc()
+        npc:bring_to_ngo(npc.model)
+    end)
+    
+    local function job_option_shop_worker()
+        local npc_model = player_manager:get_talking_npc().model
+        local routine = self:create_conversation({
+            {
+                npc_model,
+                "Oh my! Thank you so much for finding me the job of being a shop worker!",
+            },
+        })
+        while coroutine.status(routine) ~= "dead" do
+            task.wait()
+        end
+        bus:publish("stop_looking_for_job", npc_model, npcs_manager.last_talker)
+    end
+    bus:subscribe("shop_worker_chosen", job_option_shop_worker)
+
+    local function job_option_street_cleaner()
+        local npc_model = player_manager:get_talking_npc().model
+        local routine = self:create_conversation({
+            {
+                npc_model,
+                "Oh my! Thank you so much for finding me the job of being a street cleaner!",
+            },
+        })
+        while coroutine.status(routine) ~= "dead" do
+            task.wait()
+        end
+        bus:publish("stop_looking_for_job", npc_model, npcs_manager.last_talker)
+    end
+    bus:subscribe("street_cleaner_chosen", job_option_street_cleaner)
+
+    local function job_option_ngo_worker()
+        local npc_model = player_manager:get_talking_npc().model
+        local routine = self:create_conversation({
+            {
+                npc_model,
+                "Oh my! Thank you so much for finding me the job of being a NGO worker!",
+            },
+        })
+        while coroutine.status(routine) ~= "dead" do
+            task.wait()
+        end
+        bus:publish("stop_looking_for_job", npc_model, npcs_manager.last_talker)
+    end
+    bus:subscribe("ngo_worker_chosen", job_option_ngo_worker)
+                
+
+    bus:subscribe("level_up", function(level)
+        if level == 2 then
+            self.filtered_map("seller_v1", function(npc)
+                delete_old_prompt(npc)
+            end)
+            self.filtered_map("seller_v1", function(npc)
+                local prompt = create_n_attach_prompt(npc.model, {
+                    action_text = "Talk to " .. npc.name
+                })
+                npc:connect_prompt_triggered({
+                    type = "dialog",
+                    prompt = prompt,
+                    callback = function()
+                        if player_manager:get_last_talking_npc() == npc or
+                            player_manager:is_looking_for_job() then
+                            return
+                        end
+                        local routine = self:create_conversation({
+                            {
+                                npc.head,
+                                "Hi, how are you?",
+                            },
+                        })
+                        while coroutine.status(routine) ~= "dead" do
+                            task.wait()
+                        end
+                        bus:publish("show_seller_dialog")
+                    end
+                })
             end)
             
-            prompt.TriggerEnded:Connect(function()
-                task.spawn(function()
-                    prompt.Enabled = not prompt.Enabled
-                    task.wait(1.5)
-                    prompt.Enabled = not prompt.Enabled
-                end)
+            self.filtered_map("needy_v1", function(npc)
+                delete_old_prompt(npc)
+            end)
+            self.filtered_map("needy_v1", function(npc)
+                local npc_prompt = create_n_attach_prompt(npc.model, {
+                    action_text = "Interact with " .. npc.name
+                })
+                npc:connect_prompt_triggered({
+                    type = "dialog",
+                    prompt = npc_prompt,
+                    callback = function()
+                        if player_manager:get_last_talking_npc() == npc then
+                            return
+                        end
+                        local routine = self:create_conversation({
+                            {
+                                npc.head,
+                                "Hey, how are you doing today?",
+                            }
+                        })
+                        while coroutine.status(routine) ~= "dead" do
+                            task.wait()
+                        end
+                        if player_manager:is_looking_for_job() then
+                            bus:publish("show_job_options")
+                        else
+                            bus:publish("show_food_dialog")
+                        end
+                    end
+                })
             end)
         end
-    )(
-        function(predicate, callback)
-            for _, npc in ipairs(npcs_manager.objects) do
-                if predicate(npc) then
-                    callback(npc)
-                end
-            end
-        end
-    )
-    
-    self.core.filter_call(
-        function(npc)
-            return npc.model:GetAttribute("id") == "civil_v1"
-        end,
-        function(npc)
-            npc:change_parts_collision_group("npc_walk_mode")
-            npc:make_civil_walk()
-        end
-    )(
-        function(predicate, callback)
-            for _, npc in ipairs(npcs_manager.objects) do
-                if predicate(npc) then
-                    task.spawn(callback, npc)
-                end
-            end
-        end
-    )
+    end)
 end
 
 return npcs_manager

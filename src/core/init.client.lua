@@ -123,7 +123,28 @@ local function debug(...)
     end
 end
 
+local function isolate_player_during_boot()
+    local in_cube = workspace:WaitForChild("in_cube")
+    local character = _common.character
+    local hrp = _common.humanoid_root_part
+    -- Isolate the player in a cube
+    character:SetPrimaryPartCFrame(CFrame.new(in_cube.Position))
+    -- Freeze the player
+    hrp.Anchored = true
+    -- Hide the player
+    character.Parent = in_cube
+end
+
+local function spawn_player()
+    local spawn_location = CFrame.new( 0, 8, 0 )
+    _common.character:SetPrimaryPartCFrame(spawn_location)
+    _common.humanoid_root_part.Anchored = false
+    _common.character.Parent = workspace
+end
+
 local function boot()
+    -- Isolate player
+    isolate_player_during_boot()
     -- Show loading screen
     core:create_loading_screen()
     core:show_loading_screen()
@@ -233,6 +254,8 @@ local function boot()
             -- All async tasks are done, hide the loading screen
             core:destroy_loading_screen()
             debug(string.rep("-", 10), "CORE BOOT SEQUENCE FINISHED", string.rep("-", 10), core.pretty_name)
+            -- Spawn the player
+            spawn_player()
         end)
     end
 
